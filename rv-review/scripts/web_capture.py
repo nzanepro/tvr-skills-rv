@@ -136,7 +136,8 @@ def headless_shell_candidates(env=None, platform=None, home=None):
 def is_headless_shell(chrome):
     """True for chrome-headless-shell (or an older headless_shell build)."""
     first = chrome[0] if isinstance(chrome, (list, tuple)) else chrome
-    name = os.path.basename(str(first)).lower()
+    # split on both separators: a Windows path handed over on POSIX (or the reverse) still names the file
+    name = str(first).replace("\\", "/").rsplit("/", 1)[-1].lower()
     return name.startswith("chrome-headless-shell") or name.startswith("headless_shell")
 
 
