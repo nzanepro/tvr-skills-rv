@@ -1,0 +1,122 @@
+[
+  {
+    "query": "open shot010_side_before_after.png in rv so i can compare the two versions",
+    "should_trigger": true
+  },
+  {
+    "query": "let me flip between the three lighting versions before we lock one in",
+    "should_trigger": true
+  },
+  {
+    "query": "put the before/after sheets up so I can approve them",
+    "should_trigger": true
+  },
+  {
+    "query": "open in RV please, need to review the turntable renders from this morning",
+    "should_trigger": true
+  },
+  {
+    "query": "review in OpenRV, the look-dev pass is ready for a look",
+    "should_trigger": true
+  },
+  {
+    "query": "yo can u pull up the stuff in renders/v2/ so we can eyeball it side by side",
+    "should_trigger": true
+  },
+  {
+    "query": "these texture v3 passes aren't stacked into one sheet yet, can you label each version and let me flip through them",
+    "should_trigger": true
+  },
+  {
+    "query": "flip through the look-dev options for the key light setup one at a time",
+    "should_trigger": true
+  },
+  {
+    "query": "can you show me the contact sheet frames one by one so I can mark my favorite",
+    "should_trigger": true
+  },
+  {
+    "query": "the team wants to approve the before and after shots, can you set that up as a flip-book",
+    "should_trigger": true
+  },
+  {
+    "query": "can you open the turntable.mp4 in rv and just play it back for me",
+    "should_trigger": false
+  },
+  {
+    "query": "build a contact sheet from these renders for the deck",
+    "should_trigger": false
+  },
+  {
+    "query": "crop and colour correct shot010_before.png before we send it out",
+    "should_trigger": false
+  },
+  {
+    "query": "open the beauty pass exr in nuke so I can check the individual channels",
+    "should_trigger": false
+  },
+  {
+    "query": "compute the PSNR between these two renders to see how close they are",
+    "should_trigger": false
+  },
+  {
+    "query": "write a python plugin for rv that adds a custom annotation tool",
+    "should_trigger": false
+  },
+  {
+    "query": "how do I install openrv on this machine, first time setting it up",
+    "should_trigger": false
+  },
+  {
+    "query": "convert this render sequence to an mp4 with ffmpeg",
+    "should_trigger": false
+  },
+  {
+    "query": "can you review this pull request before I merge it",
+    "should_trigger": false
+  },
+  {
+    "query": "diff these two csv files and tell me what changed between them",
+    "should_trigger": false
+  },
+  {
+    "query": "load plates/shot010.1001-1100#.exr and then the comp render sequence after it so I can check them back to back",
+    "should_trigger": true
+  },
+  {
+    "query": "wipe between v3 and v4 of the shot010 movie so I can see what changed",
+    "should_trigger": true
+  },
+  {
+    "query": "I rendered a multi-view exr with left, centre and right cameras, let me flip through the views",
+    "should_trigger": true
+  },
+  {
+    "query": "check the stereo pair from the left and centre cameras side by side before I send it",
+    "should_trigger": true
+  },
+  {
+    "query": "is the 360 lat-long render seamless? put it up in the viewer so I can look around",
+    "should_trigger": true
+  },
+  {
+    "query": "transcode shot010.mov to a jpg sequence with rvio",
+    "should_trigger": false
+  },
+  {
+    "query": "list the frame ranges of every sequence in renders/ and tell me which frames are missing",
+    "should_trigger": false
+  },
+  {
+    "query": "install the lat_long_viewer rv package for all users on this machine",
+    "should_trigger": false
+  },
+  {
+    "query": "stitch these six camera images into an equirectangular panorama",
+    "should_trigger": false
+  },
+  {
+    "query": "write a multi-view exr from these three camera renders",
+    "should_trigger": false
+  }
+]

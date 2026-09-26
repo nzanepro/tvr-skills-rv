@@ -1,17 +1,39 @@
-"""Turn stacked contact sheets into equal-size labelled frames for flipping in RV.
+"""Turn stacked comparison sheets into equal-size labelled frames for flipping in RV.
 
-split  <sheet.png> [<sheet.png> ...] --out DIR
-    For every sheet (in the order given): detect its panels (full-width rows of the sheet
-    background colour separate them) and write one PNG per panel = the sheet's title band +
-    that panel (the panel keeps its own burnt-in label box).  All frames of all sheets are
-    padded (centred, sheet background colour) to the largest frame size so they line up.
-    Files are numbered globally, index last (<sheet>__<label>__<N>.png) so RV's frame number
-    in the window title equals the sequence frame.  Writes DIR/frames.json (paths, view start
-    frames) and prints the frame paths in order, one per line.
+A stacked sheet is one PNG holding several renders of the same view, one above the other:
 
-label  --title "TEXT" --out DIR  IMG=LABEL [IMG=LABEL ...]
-    For unstacked renders: burn the same title band and label box the sheet scripts draw
-    (arial 30 title on a 50 px (24,24,24) band, arial 20 white label in a black box).
+    +--------------------------------------+
+    | title band (text on any colour)      |   pixel (0, 0) must be sheet background
+    |--------------------------------------|
+    | background gap (full-width rows)     |
+    | panel 1  [label box]                 |
+    | background gap                       |
+    | panel 2  [label box]                 |
+    | ...                                  |
+    +--------------------------------------+
+
+The background colour is read from pixel (0, 0). Every full-width row of that colour
+(within a small tolerance) separates panels; everything above the first panel, gap
+included, is the title band. The panel labels come from the last tokens of the sheet's
+file name: shot010_side_before_after.png has panels "before" and "after".
+
+split  SHEET [SHEET ...] --out DIR
+    For every sheet, in the order given, write one PNG per panel: the sheet's title band
+    followed by that panel (with its own burnt-in label box). All frames of all sheets are
+    padded, centred on their sheet's background colour, to the largest frame size so
+    nothing shifts while flipping. Files are named <sheet>__<label>__<N>.png with one
+    running index N across all sheets, last in the name, because RV reads the last number
+    in a file name as the frame number. Writes DIR/frames.json
+    {"size": [W, H], "frames": [absolute paths], "views": [{"frame", "sheet", "labels"}]}
+    and prints the frame paths, one per line.
+
+label  --title TEXT --out DIR IMAGE=LABEL [IMAGE=LABEL ...]
+    For renders that were never stacked: add a title band above each image and a label
+    box in its top-left corner, so the frames look like split sheet frames. All images
+    must be the same size. Prints the frame paths, one per line.
+
+Exit status is 0 on success; problems (not a stacked sheet, mismatched sizes) exit
+non-zero with a message on stderr.
 """
 import argparse
 import json
@@ -22,12 +44,32 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-BG = (24, 24, 24)
+# --- split: panel detection ---------------------------------------------------
+BG_TOLERANCE = 2          # max per-channel difference still counted as background (dither, noise)
+MIN_PANEL_PX = 64         # a non-background run shorter than this is stray text or a rule, not a panel
+MIN_PANEL_WIDTH_DIV = 8   # ... or shorter than width / 8, so thin rules on wide sheets are skipped too
+
+# --- label: title band and label box drawn on unstacked renders ----------------
+BG = (24, 24, 24)                   # dark neutral grey: reads as "not image" and keeps text legible
+TITLE_BAND_H = 50                   # room for a 30 px title with even margins above and below
+TITLE_FONT_SIZE = 30                # readable at a glance when RV fits a whole frame on screen
+TITLE_TEXT_POS = (16, 10)           # left and top margin of the title inside the band
+TITLE_TEXT_COLOR = (235, 235, 235)  # off-white, softer than pure white on the dark band
+LABEL_FONT_SIZE = 20                # smaller than the title so the label reads as secondary
+LABEL_BOX_LEFT = 10                 # label box inset from the image's left edge
+LABEL_BOX_TOP = 10                  # label box inset below the title band
+LABEL_BOX_H = 40                    # box height: 20 px text plus padding
+LABEL_PAD_X = 10                    # space between the box edges and the label text, left and right
+LABEL_PAD_Y = 4                     # space between the box top and the label text
+LABEL_BOX_COLOR = (0, 0, 0)         # black box keeps the label readable over any render
+LABEL_TEXT_COLOR = (255, 255, 255)
+FONT_FILE = "arial.ttf"             # falls back to Pillow's built-in bitmap font if missing
 
 
 def _fonts():
     try:
-        return ImageFont.truetype("arial.ttf", 30), ImageFont.truetype("arial.ttf", 20)
+        return (ImageFont.truetype(FONT_FILE, TITLE_FONT_SIZE),
+                ImageFont.truetype(FONT_FILE, LABEL_FONT_SIZE))
     except OSError:
         f = ImageFont.load_default()
         return f, f
@@ -60,11 +102,13 @@ def panels_of(sheet):
     im = Image.open(sheet).convert("RGB")
     a = np.asarray(im).astype(np.int16)
     bg = a[0, 0]
-    uniform = (np.abs(a - bg).max(axis=2) <= 2).all(axis=1)          # full-width background rows
-    min_panel = max(64, im.width // 8)
+    uniform = (np.abs(a - bg).max(axis=2) <= BG_TOLERANCE).all(axis=1)   # full-width background rows
+    min_panel = max(MIN_PANEL_PX, im.width // MIN_PANEL_WIDTH_DIV)
     panels = [(s, e) for s, e in _runs(~uniform) if e - s >= min_panel]
     if len(panels) < 2:
-        sys.exit(f"{sheet}: found {len(panels)} panels, not a stacked sheet")
+        sys.exit(f"{sheet}: found {len(panels)} panels, not a stacked sheet "
+                 "(pixel (0, 0) must be background and panels must be separated by "
+                 "full-width background rows; use 'label' for single renders)")
     h = max(e - s for s, e in panels)
     bgc = tuple(int(c) for c in bg)
     title = im.crop((0, 0, im.width, panels[0][0]))                  # title band incl. gap
@@ -107,39 +151,76 @@ def label(title_text, items, out):
     font, small = _fonts()
     out.mkdir(parents=True, exist_ok=True)
     paths, size = [], None
+    box_top = TITLE_BAND_H + LABEL_BOX_TOP
+    text_pos = (LABEL_BOX_LEFT + LABEL_PAD_X, box_top + LABEL_PAD_Y)
     for i, (img, text) in enumerate(items, 1):
         im = Image.open(img).convert("RGB")
         if size and im.size != size:
-            sys.exit(f"{img}: size {im.size} differs from {size}; frames would not line up")
+            sys.exit(f"{img}: size {im.size} differs from {size}; frames would not line up "
+                     "(re-render or resize so every image has the same size)")
         size = im.size
-        frame = Image.new("RGB", (im.width, im.height + 50), BG)
+        frame = Image.new("RGB", (im.width, im.height + TITLE_BAND_H), BG)
         d = ImageDraw.Draw(frame)
-        d.text((16, 10), title_text, fill=(235, 235, 235), font=font)
-        frame.paste(im, (0, 50))
-        tw = d.textbbox((20, 64), text, font=small)[2]
-        d.rectangle([10, 60, tw + 10, 100], fill=(0, 0, 0))
-        d.text((20, 64), text, fill=(255, 255, 255), font=small)
+        d.text(TITLE_TEXT_POS, title_text, fill=TITLE_TEXT_COLOR, font=font)
+        frame.paste(im, (0, TITLE_BAND_H))
+        tw = d.textbbox(text_pos, text, font=small)[2]
+        d.rectangle([LABEL_BOX_LEFT, box_top, tw + LABEL_PAD_X, box_top + LABEL_BOX_H],
+                    fill=LABEL_BOX_COLOR)
+        d.text(text_pos, text, fill=LABEL_TEXT_COLOR, font=small)
         p = out / f"{Path(img).stem}__{_safe(text)}__{i}.png"
         frame.save(p)
         paths.append(p)
     return paths
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    s = sub.add_parser("split")
-    s.add_argument("sheets", nargs="+")
-    s.add_argument("--out", required=True)
-    lab = sub.add_parser("label")
-    lab.add_argument("--title", required=True)
-    lab.add_argument("--out", required=True)
-    lab.add_argument("items", nargs="+", help="image=label")
-    a = ap.parse_args()
+def _item(value):
+    if "=" not in value:
+        raise argparse.ArgumentTypeError(f"expected IMAGE=LABEL, got {value!r}")
+    return tuple(value.rsplit("=", 1))
+
+
+def build_parser():
+    ap = argparse.ArgumentParser(
+        prog="sheet_panels.py",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True, metavar="{split,label}")
+    s = sub.add_parser(
+        "split", help="split stacked sheets into labelled frames and write frames.json",
+        description="Split stacked comparison sheets into one labelled, equal-size frame per "
+                    "panel, in the order given, and write DIR/frames.json (frame paths, "
+                    "frame size and the first frame of each view).",
+        epilog="example:\n  python sheet_panels.py split shot010_side_before_after.png "
+               "shot010_top_before_after.png --out review/rv_frames\n\n"
+               "Pass the sheets in viewing order; do not glob or sort (v10 sorts before v9).\n"
+               "Panel labels are the last _-separated tokens of each sheet's file name.",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    s.add_argument("sheets", nargs="+", metavar="SHEET",
+                   help="stacked sheet image (PNG), in viewing order")
+    s.add_argument("--out", required=True, metavar="DIR",
+                   help="folder for the frames and frames.json (created if missing)")
+    lab = sub.add_parser(
+        "label", help="add a title band and label box to unstacked renders",
+        description="Add a title band and a label box to renders that were never stacked, so "
+                    "they flip like split sheet frames. All images must be the same size.",
+        epilog='example:\n  python sheet_panels.py label --title "shot010: key light" '
+               '--out review/rv_frames before.png=before after.png=after',
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    lab.add_argument("--title", required=True, metavar="TEXT",
+                     help="text for the title band on every frame")
+    lab.add_argument("--out", required=True, metavar="DIR",
+                     help="folder for the labelled frames (created if missing)")
+    lab.add_argument("items", nargs="+", type=_item, metavar="IMAGE=LABEL",
+                     help="image path and the label to burn on it, in viewing order")
+    return ap
+
+
+def main(argv=None):
+    a = build_parser().parse_args(argv)
     if a.cmd == "split":
         paths = split(a.sheets, Path(a.out))
     else:
-        paths = label(a.title, [tuple(x.rsplit("=", 1)) for x in a.items], Path(a.out))
+        paths = label(a.title, a.items, Path(a.out))
     for p in paths:
         print(p)
 

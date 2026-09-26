@@ -1,0 +1,69 @@
+{
+  "name": "tvr-skills-rv",
+  "owner": {
+    "name": "nzanepro",
+    "url": "https://github.com/nzanepro"
+  },
+  "description": "Agent Skills for media review in RV, OpenRV and Autodesk RV / ShotGrid RV: flipbooks, A/B compare, image sequences and RV command-line tools",
+  "version": "0.1.0",
+  "plugins": [
+    {
+      "name": "rv",
+      "description": "Review renders, comparison sheets, movies, image sequences, stereo / multi-view EXRs and 360 images in RV / OpenRV as a labelled flipbook, with wipe and difference A/B compare",
+      "version": "0.1.0",
+      "license": "MIT",
+      "category": "media",
+      "keywords": [
+        "rv",
+        "openrv",
+        "autodesk-rv",
+        "shotgrid-rv",
+        "media-review",
+        "image-review",
+        "video-review",
+        "flipbook",
+        "dailies",
+        "vfx",
+        "animation",
+        "render-review",
+        "ab-compare",
+        "image-sequence",
+        "openexr",
+        "stereo",
+        "multi-view",
+        "equirectangular",
+        "rvpush",
+        "agent-skills"
+      ],
+      "tags": [
+        "rv",
+        "openrv",
+        "autodesk-rv",
+        "shotgrid-rv",
+        "media-review",
+        "image-review",
+        "video-review",
+        "flipbook",
+        "dailies",
+        "vfx",
+        "animation",
+        "render-review",
+        "ab-compare",
+        "image-sequence",
+        "openexr",
+        "stereo",
+        "multi-view",
+        "equirectangular",
+        "rvpush",
+        "agent-skills"
+      ],
+      "homepage": "https://github.com/nzanepro/tvr-skills-rv",
+      "repository": "https://github.com/nzanepro/tvr-skills-rv",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./rv-review"
+      ]
+    }
+  ]
+}

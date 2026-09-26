@@ -2,9 +2,13 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+.venv/
 
 # pytest
 .pytest_cache/
 
 # rv-review output frames
 rv_frames/
+
+# packaged skills
+*.skill
