@@ -100,6 +100,7 @@ version and view), so there is always a clean source for RV. The sheet format is
 
 ## Gotchas
 
+- **Difference is one-sided.** RV's difference shows A minus B clamped at zero, so pixels where B is brighter look identical. For QA, run it in both orders before calling two versions the same.
 - **rvpush exits 0 even when the Python inside fails.** Only the read-back proves a load;
   never report success from the rvpush exit code alone.
 - **rvpush needs the tag, and never lets RV be started by rvpush.** RV must run with
