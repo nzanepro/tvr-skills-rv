@@ -10,7 +10,9 @@ installed by this script):
     cairosvg       the CairoSVG Python package (import cairosvg)
     inkscape       Inkscape 1.x command line
     playwright     Playwright for Python with its Chromium (a browser renders the SVG)
-    chrome         an installed Chrome, Edge or Chromium, headless from its command line
+    chrome         a headless browser from its command line: CHROME_PATH if set, else a
+                   chrome-headless-shell (on PATH or Playwright's, newest first), else an
+                   installed Chrome, Edge or Chromium
 Renderers differ in font fallback, filters and text layout: rasterise every version of a file
 with the same backend (the script does, and reports which) before comparing them.
 
@@ -175,7 +177,10 @@ def _html_page(svg, w, h):
 
 
 def _render_browser(backend, exe, svg, out, w, h):
-    with tempfile.TemporaryDirectory(prefix="rv-review-svg-") as tmp:
+    """Render through a browser; returns a note for the JSON, or None."""
+    import web_capture
+    tmp = tempfile.mkdtemp(prefix="rv-review-svg-")
+    try:
         page = Path(tmp) / "svg.html"
         page.write_text(_html_page(svg, w, h), encoding="utf-8")
         url = "file:" + pathname2url(str(page))
@@ -188,15 +193,16 @@ def _render_browser(backend, exe, svg, out, w, h):
                 pg.wait_for_load_state("load")
                 pg.screenshot(path=str(out), omit_background=True)
                 b.close()
-            return
-        import web_capture
-        cmd = web_capture.chrome_args(exe, url, str(Path(os.path.abspath(out))), w, h, 1.0,
-                                      str(Path(tmp) / "profile"), transparent=True)
-        cmd.insert(-1, "--allow-file-access-from-files")
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if not Path(out).is_file():
-            raise RasterizeError(f"{backend} did not write {out}: {r.stderr[-400:]}")
+            return None
+        # stops the browser once the PNG is complete (some Chrome builds never exit)
+        r = web_capture.chrome_screenshot(exe, url, out, w, h, 1.0, transparent=True,
+                                          extra_args=["--allow-file-access-from-files"])
+        if not r["ok"]:
+            raise RasterizeError(f"{backend} did not write {out}: {r['error']}")
         web_capture._fix_size(str(out), w, h)
+        return r["note"]
+    finally:
+        web_capture.remove_tree(tmp)
 
 
 def flatten(png, background):
@@ -212,7 +218,7 @@ def flatten(png, background):
             odd = ((yy // CHECK_PX + xx // CHECK_PX) % 2).astype(bool)
             arr = np.empty((im.height, im.width, 4), np.uint8)
             arr[~odd], arr[odd] = CHECKER[0] + (255,), CHECKER[1] + (255,)
-            bg = Image.fromarray(arr, "RGBA")
+            bg = Image.fromarray(arr)            # uint8 H x W x 4 -> RGBA
         else:
             m = re.fullmatch(r"#?([0-9a-fA-F]{6})", background)
             if not m:
@@ -233,17 +239,21 @@ def rasterize(svg, out, size=None, scale=1.0, background="transparent", backend=
     b = choose(found, backend)
     w, h = size if size else target_size(svg, scale=scale)
     out.parent.mkdir(parents=True, exist_ok=True)
+    note = None
     if b == "cairosvg":
         import cairosvg
         cairosvg.svg2png(url=str(svg), write_to=str(out), output_width=w, output_height=h)
     elif b in ("playwright", "chrome"):
-        _render_browser(b, found[b], svg, out, w, h)
+        note = _render_browser(b, found[b], svg, out, w, h)
     else:
         r = subprocess.run(command(b, found[b], svg, out, w, h), capture_output=True, text=True)
         if r.returncode != 0 or not out.is_file():
             raise RasterizeError(f"{b} failed on {svg}: {(r.stderr or r.stdout)[-400:]}")
     flatten(out, background)
-    return {"out": str(Path(os.path.abspath(out))), "backend": b, "size": [w, h]}
+    res = {"out": str(Path(os.path.abspath(out))), "backend": b, "size": [w, h]}
+    if note:
+        res["note"] = note
+    return res
 
 
 def build_parser():
@@ -251,7 +261,11 @@ def build_parser():
                                  formatter_class=argparse.RawDescriptionHelpFormatter,
                                  epilog="examples:\n"
                                         "  python rasterize.py icons/v1/*.svg --out review/v1 --scale 4 --background checker\n"
-                                        "  python rasterize.py logo_v1.svg logo_v2.svg --same-size --width 1024 --out review/logo")
+                                        "  python rasterize.py logo_v1.svg logo_v2.svg --same-size --width 1024 --out review/logo\n"
+                                        "\nenvironment:\n"
+                                        "  CHROME_PATH   executable for the chrome backend; wins over the lookup, which\n"
+                                        "                prefers a chrome-headless-shell (PATH, then Playwright's cache,\n"
+                                        "                PLAYWRIGHT_BROWSERS_PATH honoured) over Chrome / Edge / Chromium")
     ap.add_argument("svgs", nargs="*", metavar="SVG")
     ap.add_argument("--out", metavar="DIR", help="folder for the PNGs")
     ap.add_argument("--width", type=int, help="output width in px (keeps the aspect)")

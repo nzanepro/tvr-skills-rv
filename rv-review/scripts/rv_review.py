@@ -50,12 +50,18 @@ schema_version 1), for example
 "ok" is true when the state read back from RV (sources, frames, marks, view, stereo and, for
 stacks, the composite, wipes mode and wipe edge) matches what was loaded and RV logged no
 ERROR lines during the load; "problems" lists any difference, "errors" / "warnings" the
-lines RV logged. Every item carries its global frame range, so a frame maps back to its item
-and meta. The full schema is in references/integration.md.
+lines RV logged (always lists). Every item carries its global frame range, so a frame maps
+back to its item and meta. The full schema is in references/integration.md.
+
+Decode check: RV shows a truncated or corrupt still as "error reading" on screen but logs
+nothing, so before the load every still and the first frame of every sequence is checked
+(header, end marker and, with Pillow installed, a full decode of PNG / JPEG / GIF / BMP /
+WebP). The load still goes ahead, so the rest can be reviewed, but each failure is listed
+in "errors" and the exit status is 3. --no-decode-check skips it.
 
 Exit status: 0 loaded and verified; 1 error (RV not found, source or manifest problem, RV did
-not answer); 2 bad arguments; 3 loaded but the read-back did not match or RV logged errors
-(run again once, then report the problems).
+not answer or exited); 2 bad arguments; 3 loaded but the read-back did not match, a source
+did not decode or RV logged errors (run again once, then report the problems).
 """
 import argparse
 import ast
@@ -349,6 +355,139 @@ def resolve_sources(tokens, cwd=None):
         for t in g:
             out.append(resolve_token(t, cwd) if t in files else t)
     return out
+
+
+# --- decode check: files RV shows as "error reading" on screen without logging an error --
+
+PIL_DECODE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}   # Pillow reads every valid file
+DECODE_MAX_BYTES = 512 * 1024 * 1024   # larger files get the header check only
+DECODE_WORKERS = 8
+_SEQ_PART_RE = re.compile(r"(?:(-?\d+)-(-?\d+))?#|@+|%0?\d*d")
+
+
+def sequence_first_file(spec):
+    """The existing file with the lowest frame number of a sequence spec (name.#.exr,
+    name.1001-1100#.exr, name.@@@@.exr, name.%04d.exr), or None."""
+    p = Path(spec)
+    m = _SEQ_PART_RE.search(p.name)
+    if not m or not p.parent.is_dir():
+        return None
+    lo, hi = (int(m.group(1)), int(m.group(2))) if m.group(1) else (None, None)
+    rx = re.compile(re.escape(p.name[:m.start()]) + r"(-?\d+)" + re.escape(p.name[m.end():]) + "$")
+    best = None
+    for name in os.listdir(p.parent):
+        hit = rx.match(name)
+        if not hit:
+            continue
+        n = int(hit.group(1))
+        if lo is not None and not lo <= n <= hi:
+            continue
+        if best is None or n < best[0]:
+            best = (n, name)
+    return str(p.parent / best[1]) if best else None
+
+
+def header_problem(path, jpeg_end=True):
+    """What is wrong with an image file's header or end, or None: empty file, wrong magic
+    number, a PNG without its IEND chunk, a JPEG without its end marker (jpeg_end; some
+    cameras append data after it, so a full decode is the better test), a DPX shorter than
+    the size in its header. Formats without a known check pass."""
+    ext = Path(path).suffix.lower()
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            head = f.read(32)
+            f.seek(max(0, size - 4096))
+            tail = f.read()
+    except OSError as e:
+        return f"cannot read ({e.strerror or e})"
+    if size == 0:
+        return "the file is empty"
+    if ext == ".png":
+        if not head.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "not a PNG file (wrong signature)"
+        if b"IEND" not in tail:
+            return "the PNG ends before its IEND chunk (truncated)"
+    elif ext in (".jpg", ".jpeg"):
+        if not head.startswith(b"\xff\xd8"):
+            return "not a JPEG file (no start-of-image marker)"
+        if jpeg_end and b"\xff\xd9" not in tail:
+            return "the JPEG has no end-of-image marker (truncated)"
+    elif ext in (".tif", ".tiff"):
+        if head[:4] not in (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+"):
+            return "not a TIFF file (wrong byte-order header)"
+    elif ext == ".exr":
+        if not head.startswith(b"\x76\x2f\x31\x01"):
+            return "not an OpenEXR file (wrong magic number)"
+    elif ext == ".dpx":
+        if head[:4] not in (b"SDPX", b"XPDS"):
+            return "not a DPX file (wrong magic number)"
+        if len(head) >= 20:
+            declared = int.from_bytes(head[16:20], "big" if head[:4] == b"SDPX" else "little")
+            if 0 < declared and size < declared:
+                return f"the DPX is {size} bytes but its header says {declared} (truncated)"
+    return None
+
+
+def _pillow_image():
+    try:
+        from PIL import Image
+        return Image
+    except Exception:              # Pillow is optional: fall back to the header checks
+        return None
+
+
+def decode_problem(path, image_module=None):
+    """What stops path from decoding, or None: the header checks, then (for PNG, JPEG, GIF,
+    BMP and WebP, when Pillow is installed) a full decode."""
+    deep = image_module is not None and Path(path).suffix.lower() in PIL_DECODE_EXTS
+    problem = header_problem(path, jpeg_end=not deep)
+    if problem or not deep:
+        return problem
+    try:
+        if os.path.getsize(path) > DECODE_MAX_BYTES:
+            return None
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")          # e.g. DecompressionBombWarning
+            with image_module.open(path) as im:
+                im.load()
+    except MemoryError:
+        return None
+    except Exception as e:  # noqa: BLE001  (Pillow raises OSError, SyntaxError, ValueError ...)
+        return f"cannot be decoded ({str(e) or type(e).__name__})"
+    return None
+
+
+def decode_targets(tokens):
+    """The files to decode-check: every still, and the first frame of every sequence."""
+    out = []
+    for g in group_sources(tokens):
+        for f in _group_files(g):
+            if f.lower().endswith(".rv"):
+                continue
+            if is_sequence_spec(f):
+                first = sequence_first_file(f)
+                if first and Path(first).suffix.lower() in STILL_EXTS:
+                    out.append(first)
+            elif is_still(f):
+                out.append(f)
+    return list(dict.fromkeys(out))
+
+
+def decode_check(tokens, image_module="auto"):
+    """Messages for stills and first sequence frames that do not decode. RV shows such a
+    file as "error reading" on screen but logs nothing, so the read-back cannot see it."""
+    if image_module == "auto":
+        image_module = _pillow_image()
+    files = decode_targets(tokens)
+    if not files:
+        return []
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(DECODE_WORKERS, len(files))) as pool:
+        found = list(pool.map(lambda f: decode_problem(f, image_module), files))
+    return [f"{f}: {msg}; RV shows it as 'error reading'. Re-render or re-export it (or pass "
+            f"--no-decode-check to skip this check)" for f, msg in zip(files, found) if msg]
 
 
 def load_frames_json(path):
@@ -745,7 +884,12 @@ def annotation_commands(source_names, source_items, items):
 LOG_LINE_RE = re.compile(
     r"^(?:\[[^\]]*\]\s*\[[^\]]*\]\s*\[(?P<lvl1>[a-z]+)\]\s*(?P<msg1>.*)"     # [time] [OpenRV] [error] msg
     r"|(?P<lvl2>ERROR|WARNING|CRITICAL|WARN)\s*:\s*(?P<msg2>.*))$")          # ERROR: msg
-LOG_IGNORE = ()   # message substrings that are known to be harmless; none so far
+# message substrings that are known to be harmless, whatever level RV logs them at
+LOG_IGNORE = (
+    "RvNetwork: no session for incoming connection",   # this script's own rvpush polling while
+    "connection aborted reading greeting",             # RV starts, before its session exists
+    "trying brute force to find an image reader",      # RV opening a .rv / .otio file
+)
 
 
 def parse_log(text):
@@ -893,12 +1037,19 @@ def _load(rv, rvpush, tag, tokens, latlong=False, watch=None, expected=1):
         if c == 0 and out.isdigit() and int(out) > 0:     # answering and sources added
             if int(out) >= expected or time.monotonic() - start > LAUNCH_TIMEOUT_S / 2:
                 return "launched", p.pid
-        if p.poll() is not None or time.monotonic() - start > LAUNCH_TIMEOUT_S:
+        exit_code = p.poll()
+        if exit_code is not None:
             raise RvError(
-                f"RV pid {p.pid} started but did not answer rvpush within {int(LAUNCH_TIMEOUT_S)} s "
-                f"(exited: {p.poll() is not None}). Check that RV networking is allowed (a "
-                f"firewall prompt may be waiting), that the sources open in RV by hand, and that "
-                f"no other RV uses tag '{tag}'; then run again. RV's output: {log}")
+                f"RV pid {p.pid} exited after {time.monotonic() - start:.0f} s (exit code "
+                f"{exit_code}) before it answered rvpush. Check that the sources open in RV by "
+                f"hand and that no other RV uses tag '{tag}', then run again (a second try "
+                f"usually works if it was a one-off); RV's output: {log}")
+        if time.monotonic() - start > LAUNCH_TIMEOUT_S:
+            raise RvError(
+                f"RV pid {p.pid} is running but did not answer rvpush within "
+                f"{int(LAUNCH_TIMEOUT_S)} s. Check that RV networking is allowed (a firewall "
+                f"prompt may be waiting), that the sources open in RV by hand, and that no other "
+                f"RV uses tag '{tag}'; then run again. RV's output: {log}")
         time.sleep(POLL_INTERVAL_S)
 
 
@@ -1033,8 +1184,11 @@ def export_annotated(rv, rvpush, tag, frames, folder):
     rvio = Path(rv).parent / ("rvio.exe" if os.name == "nt" else "rvio")
     if not rvio.is_file():
         return {}, None, [f"rvio not found next to {rv}; the annotated session is at {session}"]
+    # the saved session linearises 8-bit sources (RV's default sRGB file transform) and rvio
+    # writes that linear result unless told otherwise; -outsrgb re-encodes it the way RV's
+    # default sRGB display shows it, so the PNGs match what the reviewer saw
     cmd = [str(rvio), str(session), "-o", str(folder / "annotated.#.png"),
-           "-t", ",".join(str(f) for f in frames)]
+           "-t", ",".join(str(f) for f in frames), "-outsrgb"]
     r = subprocess.run(cmd, capture_output=True, text=True)
     errors, _ = parse_log(r.stdout + r.stderr)
     images = {}
@@ -1098,9 +1252,10 @@ def _session_post_commands():
 
 def review(tokens, rv, rvpush, tag=DEFAULT_TAG, marks="auto", compare="sequence", fps=None,
            views=None, stereo=None, stereo_views=None, swap_eyes=False, latlong=False,
-           info_strip=False, manifest=None, save_session=None):
+           info_strip=False, manifest=None, save_session=None, check_decode=True):
     """Load, set up, read back and verify. manifest: a normalised review manifest whose items
-    match tokens one to one (None builds items from the tokens)."""
+    match tokens one to one (None builds items from the tokens). check_decode: decode stills
+    and first sequence frames first (decode_check) and report failures as errors."""
     groups = group_sources(tokens)
     session_file = next((f for g in groups for f in _group_files(g)
                          if f.lower().endswith(".rv")), None)
@@ -1110,6 +1265,7 @@ def review(tokens, rv, rvpush, tag=DEFAULT_TAG, marks="auto", compare="sequence"
         manifest = {"schema_version": rm.SCHEMA_VERSION, "title": "", "meta": {}, "groups": [],
                     "items": items_from_tokens(tokens), "layout": compare, "marks": "auto"}
     items = manifest["items"]
+    decode_errors = decode_check(tokens) if check_decode and not session_file else []
     watch = LogWatch(tag)
     n_expected = (rv_session.summarise(session_file) or {}).get("sources", 1) if session_file \
         else len(groups)
@@ -1202,6 +1358,11 @@ def review(tokens, rv, rvpush, tag=DEFAULT_TAG, marks="auto", compare="sequence"
     errors, warnings = parse_log(watch.new_text())
     if errors:
         problems = problems + [f"RV logged {len(errors)} error(s) during the load; see 'errors'"]
+    if decode_errors:
+        problems = problems + [f"{len(decode_errors)} source file(s) did not decode; see 'errors'"]
+        errors = decode_errors + errors
+    if action == "replaced":
+        _rvpush(rvpush, tag, "py-exec", RAISE_WINDOW_COMMAND)
     session_out = None
     if save_session and not session_file:
         sess_items = []
@@ -1231,6 +1392,20 @@ def review(tokens, rv, rvpush, tag=DEFAULT_TAG, marks="auto", compare="sequence"
                                                          [dict(o) for o in out_items]),
             "session": session_out, "state": state, "problems": problems,
             "errors": errors, "warnings": warnings, "log": watch.sources(), "ok": not problems}
+
+
+# a replaced load does not bring RV forward (macOS also stops repainting a covered window);
+# raise the session window, best effort: Qt may only flash it when another app has focus
+RAISE_WINDOW_COMMAND = "exec(" + repr(
+    "try:\n"
+    "    import rv.qtutils\n"
+    "    _w = rv.qtutils.sessionWindow()\n"
+    "    if _w.isMinimized():\n"
+    "        _w.showNormal()\n"
+    "    _w.raise_()\n"
+    "    _w.activateWindow()\n"
+    "except Exception:\n"
+    "    pass\n") + ")"
 
 
 def window_title_command(label, compare):
@@ -1369,6 +1544,9 @@ def envelope(body=None, exit_code=EXIT_OK, error=None):
     out = {"schema": RESULT_SCHEMA, "schema_version": RESULT_VERSION,
            "ok": exit_code == EXIT_OK, "exit_code": exit_code}
     out.update(body or {})
+    for key in ("errors", "warnings"):       # always lists, also for --state, --notes, errors
+        if not isinstance(out.get(key), list):
+            out[key] = []
     # the envelope's own keys always win over anything in the body
     out.update({"schema": RESULT_SCHEMA, "schema_version": RESULT_VERSION,
                 "ok": exit_code == EXIT_OK, "exit_code": exit_code})
@@ -1454,6 +1632,9 @@ def build_parser():
                          "text, stroke counts) with each item's label and meta")
     ap.add_argument("--export-annotated", metavar="DIR",
                     help="with --notes: also render every annotated frame to DIR through rvio")
+    ap.add_argument("--no-decode-check", action="store_true",
+                    help="skip decoding stills and first sequence frames before the load (see "
+                         "above); for very large sets or formats the check misreads")
     ap.add_argument("--tag", default=DEFAULT_TAG,
                     help=f"RV network tag of the review window (default: {DEFAULT_TAG})")
     ap.add_argument("--rv-bin", metavar="DIR",
@@ -1527,7 +1708,7 @@ def main(argv=None):
         fps = a.fps if a.fps is not None else (manifest or {}).get("fps")
         result = review(resolve_sources(tokens), rv, rvpush, a.tag, marks, compare, fps,
                         a.views, stereo, a.stereo_views, a.swap_eyes, a.latlong, a.info_strip,
-                        manifest, a.save_session)
+                        manifest, a.save_session, not a.no_decode_check)
     except RvError as e:
         print(f"rv_review: {e}", file=sys.stderr)
         print(json.dumps(envelope({"action": "error"}, EXIT_ERROR, str(e))))

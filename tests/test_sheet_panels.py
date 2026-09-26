@@ -286,7 +286,7 @@ def test_single_panel_sheet_is_rejected(tmp_path, sp):
 # label(): unstacked renders
 # ---------------------------------------------------------------------------
 
-def test_label_burns_title_and_label_box_and_sets_output_height(tmp_path, sp):
+def test_label_puts_title_and_label_box_in_the_band_above_the_image(tmp_path, sp):
     im_a = Image.new("RGB", (200, 120), (80, 80, 80))
     im_b = Image.new("RGB", (200, 120), (120, 40, 40))
     path_a = tmp_path / "a.png"
@@ -297,17 +297,20 @@ def test_label_burns_title_and_label_box_and_sets_output_height(tmp_path, sp):
     out = tmp_path / "out"
     paths = sp.label("Shot 010", [(str(path_a), "before"), (str(path_b), "after")], out)
 
+    band = sp.band_height((200, 120))
+    lay = sp.frame_layout((200, 120))
     assert len(paths) == 2
     for path, src_im, src_color in zip(paths, [im_a, im_b], [(80, 80, 80), (120, 40, 40)]):
         frame = Image.open(path).convert("RGB")
-        assert frame.size == (src_im.width, src_im.height + 50)
+        assert frame.size == (src_im.width, src_im.height + band)
         arr = np.asarray(frame)
         # a corner well away from the title text stays pure background
-        assert tuple(arr[2, 2]) == (24, 24, 24)
-        # the source image is pasted at y=50, unaffected far from the label box
-        assert tuple(arr[-5, -5]) == src_color
-        # the label box (burned onto the image, near its top-left) is a black rectangle
-        assert tuple(arr[62, 12]) == (0, 0, 0)
+        assert tuple(arr[2, 2]) == sp.BG
+        # the whole source image is pasted untouched below the band: nothing over it
+        assert (arr[band:] == np.array(src_color, np.uint8)).all()
+        # the label box sits in the band, under the title
+        assert tuple(arr[lay["label_top"] + 1, lay["label_left"] + 1]) == sp.LABEL_BOX_COLOR
+        assert lay["label_top"] + lay["label_box_h"] <= band
 
 
 def test_label_rejects_images_of_different_sizes(tmp_path, sp):
@@ -332,15 +335,70 @@ def test_labelled_frame_grows_height_by_title_band_and_keeps_width(sp):
     frame = sp.labelled_frame(src, "Shot 010: comparison", "before")
 
     assert frame.width == src.width
-    assert frame.height == src.height + sp.TITLE_BAND_H
+    assert frame.height == src.height + sp.band_height(src.size)
 
 
-def test_labelled_frame_label_box_is_solid_black(sp):
+def test_labelled_frame_label_box_is_in_the_band_not_over_the_image(sp):
     src = Image.new("RGB", (220, 130), (90, 90, 90))
 
     frame = sp.labelled_frame(src, "Shot 010: comparison", "before")
 
-    x = sp.LABEL_BOX_LEFT + 1
-    y = sp.TITLE_BAND_H + sp.LABEL_BOX_TOP + 1
+    lay = sp.frame_layout(src.size)
     assert frame.mode == "RGB"
-    assert frame.getpixel((x, y)) == (0, 0, 0)
+    assert frame.getpixel((lay["label_left"] + 1, lay["label_top"] + 1)) == sp.LABEL_BOX_COLOR
+    img = np.asarray(frame)[lay["band"]:]
+    assert (img == 90).all()
+
+
+@pytest.mark.parametrize("size, scale", [
+    ((200, 120), 1.0),            # small frames keep the base sizes
+    ((1280, 800), 1.0),
+    ((1440, 900), 1440 / 1280),   # a desktop web capture
+    ((1600, 1000), 1600 / 1280),
+    ((1206, 2622), 2622 / 800),   # an iPhone simulator capture: height decides
+])
+def test_frame_scale_grows_with_the_image(sp, size, scale):
+    assert sp.frame_scale(size) == pytest.approx(scale)
+
+
+def test_band_fonts_and_label_box_scale_with_the_image(sp):
+    small, big = sp.frame_layout((375, 800)), sp.frame_layout((1206, 2622))
+    assert big["band"] > 3 * small["band"]
+    assert big["title_font"].size > 3 * small["title_font"].size
+    assert big["label_box_h"] > 3 * small["label_box_h"]
+    # text stays readable when RV fits the whole frame into an 800 px high viewer
+    fitted = 800 / (2622 + big["band"])
+    assert big["title_font"].size * fitted >= 24
+    assert big["label_font"].size * fitted >= 20
+
+
+def test_long_title_and_label_are_shortened_to_the_frame_width(sp):
+    src = Image.new("RGB", (160, 60), (90, 90, 90))
+    lay = sp.frame_layout(src.size)
+
+    frame = sp.labelled_frame(src, "a/very/long/path/to/the/screen/home.png",
+                              "diff x8  12.34% px, max 0.56 and a long tail", lay)
+
+    arr = np.asarray(frame)
+    # the label box stops inside the right margin instead of running off the frame
+    row = arr[lay["label_top"] + 1]
+    box = np.nonzero((row == sp.LABEL_BOX_COLOR).all(axis=1))[0]
+    assert box.size and box.max() < src.width - lay["label_left"] + 1
+    d = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    t = sp.fit_text("a/very/long/path/to/the/screen/home.png", lay["title_room"], lay["title_font"])
+    assert t.startswith("...") and t.endswith(".png")
+    assert d.textlength(t, font=lay["title_font"]) <= lay["title_room"]
+    t = sp.fit_text("a long label that does not fit", 60, lay["label_font"], keep="start")
+    assert t.startswith("a") and t.endswith("...")
+
+
+def test_split_frames_keep_the_sheet_labels_and_add_no_band(tmp_path, sp):
+    sheet = tmp_path / "shot010_side_before_after.png"
+    build_sheet(sheet, bg=(30, 30, 30), title_color=(200, 200, 200),
+                panel_colors=[(200, 0, 0), (0, 0, 200)])
+    paths = sp.split([sheet], tmp_path / "out")
+    src = Image.open(sheet)
+    # split frames are the sheet's own title band plus one panel: nothing drawn, same width
+    for p in paths:
+        assert Image.open(p).width == src.width
+        assert Image.open(p).height < src.height

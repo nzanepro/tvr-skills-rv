@@ -121,9 +121,14 @@ Schema `rv-review.result`, `schema_version` 1. Load example (shortened):
   its item (and `meta`) with it. In stack and tile layouts every item spans the whole range.
 - `items[].sources`: RV source nodes of the item (several when `--views all` expanded it).
 - `problems`: differences between what was asked and what RV reports, plus a note when RV
-  logged errors. `errors` / `warnings`: the ERROR / WARNING lines RV itself logged during the
-  load (INFO noise dropped). Any new ERROR line makes the load fail (exit 3), even when the
-  read-back matched, because a file that failed to open can still leave a placeholder frame.
+  logged errors or a source did not decode. `errors` / `warnings`: the ERROR / WARNING lines
+  RV itself logged during the load (INFO noise and the start-up lines the launcher's own
+  polling causes are dropped), and first in `errors` every still or first sequence frame that
+  failed the decode check (RV shows those as "error reading" but logs nothing;
+  `--no-decode-check` skips the check). Any of them makes the load fail (exit 3), even when
+  the read-back matched, because a file that failed to open can still leave a placeholder
+  frame. `errors` and `warnings` are always lists, also in `--state`, `--notes` and error
+  results.
 - `log`: where those lines were read: the file the launcher sends RV's output to
   (`<temp>/rv-review-<tag>.log`), or for windows started another way RV's own log
   (Windows `%APPDATA%\ASWF\OpenRV\OpenRV.log`, macOS `~/Library/Logs/ASWF/OpenRV.log`, Linux
@@ -170,7 +175,7 @@ python scripts/rv_review.py --notes --export-annotated review/notes
 | 0 | loaded and verified / notes read | continue |
 | 1 | error: RV not found, source or manifest problem, RV did not answer | show `error`; fix the input |
 | 2 | bad arguments | fix the call |
-| 3 | loaded but the read-back differs or RV logged errors | run once more; if it persists, report `problems` and `errors` instead of saying the review is ready |
+| 3 | loaded but the read-back differs, a source did not decode or RV logged errors | run once more; if it persists, report `problems` and `errors` instead of saying the review is ready |
 
 ## Stability and versioning
 

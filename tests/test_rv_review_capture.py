@@ -152,7 +152,7 @@ def test_build_pads_every_frame_of_a_screen_to_the_largest_variant(tmp_path, rse
     variants = _two_variant_tree(tmp_path / "caps")
     res = rset.build(variants, tmp_path / "review")
     data = json.loads(Path(res["frames_json"]).read_text(encoding="utf-8"))
-    band = rset.sp.TITLE_BAND_H
+    band = rset.sp.band_height((50, 30))                  # small frames: scale 1
     sizes = [Image.open(it["path"]).size for it in data["items"]]
     assert sizes[0] == sizes[1] == (50, 30 + band)       # home: max(40, 50) x max(30, 20)
     assert sizes[2] == sizes[3] == (20, 20 + band)       # settings: only light exists
@@ -372,7 +372,7 @@ def _rgba_strip(path):
     """4 x 1 RGBA: opaque red, transparent, half-alpha black, opaque blue."""
     arr = np.array([[[255, 0, 0, 255], [0, 0, 0, 0], [0, 0, 0, 128], [0, 0, 255, 255]]],
                    np.uint8)
-    Image.fromarray(arr, "RGBA").save(path)
+    Image.fromarray(arr).save(path)                     # uint8 H x W x 4 -> RGBA
     return path
 
 
@@ -403,7 +403,7 @@ def test_flatten_checker(tmp_path, rz):
     p = tmp_path / "c.png"
     arr = np.zeros((16, 16, 4), np.uint8)
     arr[15, 15] = (10, 200, 10, 255)
-    Image.fromarray(arr, "RGBA").save(p)
+    Image.fromarray(arr).save(p)                        # uint8 H x W x 4 -> RGBA
     rz.flatten(p, "checker")
     with Image.open(p) as im:
         assert im.mode == "RGB"
@@ -611,8 +611,8 @@ def test_find_chrome_env_var_to_missing_file_is_ignored(tmp_path, wc):
 def test_find_chrome_which_order(wc):
     which = _which_only("chromium", "msedge")
     assert wc.find_chrome(env={}, platform="linux", which=which) == "fake/chromium"
-    assert which.calls[0] == "google-chrome"
-    assert which.calls == list(wc.CHROME_NAMES[:which.calls.index("chromium") + 1])
+    assert which.calls[0] == "chrome-headless-shell"   # a headless shell is looked for first
+    assert which.calls[1:] == list(wc.CHROME_NAMES[:which.calls.index("chromium")])
 
 
 def test_find_chrome_nothing_found(wc):
@@ -680,7 +680,7 @@ def test_tile_splits_tall_capture(tmp_path, wc):
     arr = np.zeros((250, 30, 3), np.uint8)
     arr[:, :, 0] = (np.arange(250) % 256)[:, None]
     p = tmp_path / "home__mobile.png"
-    Image.fromarray(arr, "RGB").save(p)
+    Image.fromarray(arr).save(p)                        # uint8 H x W x 3 -> RGB
     tiles = wc.tile(p, 100)
     assert [Path(t).name for t in tiles] == ["home__mobile__t01.png", "home__mobile__t02.png",
                                              "home__mobile__t03.png"]

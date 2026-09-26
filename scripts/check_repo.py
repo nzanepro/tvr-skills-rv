@@ -27,19 +27,28 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Folders never worth scanning: version control internals, caches, and this
-# script's own test, which necessarily quotes the patterns below.
+# script's own test, which necessarily quotes the patterns below. Used to filter the
+# walk-based fallback in iter_repo_files() (the normal git-based listing skips these on its
+# own, since they are untracked and .gitignore'd).
 EXCLUDE_DIRS = {".git", "__pycache__", ".pytest_cache", "rv_frames"}
+# Extra folders the fallback walk also skips: virtualenvs and other local/tooling caches that
+# are .gitignore'd but would otherwise be walked and scanned (a stray .venv can contain
+# thousands of files with the reviewer's own machine paths baked into them).
+FALLBACK_EXTRA_EXCLUDE_DIRS = {".venv", "venv", ".tox", "node_modules", "dist", "build",
+                               ".mypy_cache"}
 EXCLUDE_FILES = {
     ".private-words",
     "scripts/check_repo.py",
     "tests/test_repo_checks.py",
 }
+GIT_LS_FILES_TIMEOUT = 15
 # Extensions that are binary / not worth a text scan.
 BINARY_EXTS = {
     ".png", ".gif", ".jpg", ".jpeg", ".mov", ".mp4", ".exr", ".dpx", ".tif", ".tiff",
@@ -105,15 +114,51 @@ class Problem:
         return f"[{self.check}] {self.path}: {self.detail}"
 
 
-def iter_repo_files():
-    for path in sorted(REPO_ROOT.rglob("*")):
+def _git_repo_files(root: Path) -> list | None:
+    """Files git would keep for this repo -- tracked files plus untracked files that are not
+    .gitignore'd -- as paths relative to `root`, or None when git is missing or `root` is not
+    a git work tree. Getting this list from git (rather than walking the whole tree) means an
+    ignored folder such as a local .venv is never even considered, whatever it contains.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+            cwd=str(root),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            timeout=GIT_LS_FILES_TIMEOUT,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    names = result.stdout.decode("utf-8", errors="replace").split("\0")
+    return [Path(name) for name in names if name]
+
+
+def _walk_repo_files(root: Path):
+    exclude_dirs = EXCLUDE_DIRS | FALLBACK_EXTRA_EXCLUDE_DIRS
+    for path in sorted(root.rglob("*")):
         if not path.is_file():
             continue
-        rel = path.relative_to(REPO_ROOT)
-        if any(part in EXCLUDE_DIRS for part in rel.parts):
+        rel = path.relative_to(root)
+        if any(part in exclude_dirs for part in rel.parts):
             continue
+        yield rel
+
+
+def iter_repo_files():
+    tracked = _git_repo_files(REPO_ROOT)
+    if tracked is not None:
+        rels = sorted(tracked, key=lambda p: p.as_posix())
+    else:
+        rels = _walk_repo_files(REPO_ROOT)
+    for rel in rels:
         if rel.as_posix() in EXCLUDE_FILES:
             continue
+        if not (REPO_ROOT / rel).is_file():
+            continue  # e.g. a name git reported that was deleted/renamed since
         yield rel
 
 

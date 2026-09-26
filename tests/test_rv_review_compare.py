@@ -341,6 +341,50 @@ def test_load_rgba_dark_16_bit_image_is_scaled_too(cd, tmp_path):
     assert list(a[0, :, 0]) == [0, 0, 0, 0]
 
 
+def test_load_rgba_fine_keeps_16_bit_levels_and_skips_8_bit(cd, tmp_path):
+    p16 = write_png(tmp_path / "g16.png", np.array([[0, 100, 65535]], np.uint16))
+    fine = cd.load_rgba_fine(p16)
+    assert fine.dtype == np.float32 and fine.shape == (1, 3, 4)
+    assert fine[0, 1, 0] == pytest.approx(100 / 257) and fine[0, 2, 0] == pytest.approx(255)
+    assert cd.load_rgba_fine(write_png(tmp_path / "rgb.png", solid()[..., :3])) is None
+
+
+def test_compare_pair_measures_16_bit_pairs_on_every_level(cd, tmp_path):
+    base = np.full((40, 50), 30000, np.uint16)
+    cand = base.copy()
+    cand[:, :25] += 100                   # +100 / 65535: well under one 8-bit level
+    r = cd.compare_pair({"key": "g.png", "baseline": str(write_png(tmp_path / "a" / "g.png", base)),
+                         "candidate": str(write_png(tmp_path / "b" / "g.png", cand))})
+    assert r["measured_depth"] == "full" and r["status"] == "changed"
+    assert r["changed_fraction"] == pytest.approx(0.5)
+    assert r["bbox"] == [0, 0, 25, 40]
+    assert r["max_abs"] == pytest.approx(100 / 65535, abs=1e-5)
+
+
+def test_write_frames_draw_nothing_over_the_images(cd, tmp_path):
+    a = solid(GREY, (120, 80))
+    b = a.copy()
+    b[:10, :10] = WHITE                    # change in the top-left corner, where labels used to sit
+    r = cd.compare_pair({"key": "icon.png", "baseline": str(write_png(tmp_path / "a" / "i.png", a)),
+                         "candidate": str(write_png(tmp_path / "b" / "i.png", b))})
+    cd.write_frames([r], tmp_path / "out")
+    band = cd.sp.band_height((120, 80))
+    for role, src in (("baseline", a), ("candidate", b)):
+        frame = np.asarray(Image.open(r["frames"][role]).convert("RGB"))
+        assert frame.shape == (80 + band, 120, 3)
+        assert np.array_equal(frame[band:], src[..., :3])
+    diff = np.asarray(Image.open(r["frames"]["diff"]).convert("RGB"))[band:]
+    assert (diff[:10, :10] != diff[20, 20]).any(axis=2).all()   # the change shows, unlabelled
+
+
+def test_compare_pair_mixed_depth_is_measured_at_8_bits(cd, tmp_path):
+    base = np.full((10, 10), 257 * 128, np.uint16)
+    cand = solid((128, 128, 128, 255), (10, 10))
+    r = cd.compare_pair({"key": "g.png", "baseline": str(write_png(tmp_path / "a" / "g.png", base)),
+                         "candidate": str(write_png(tmp_path / "b" / "g.png", cand))})
+    assert r["measured_depth"] == "8-bit" and r["status"] == "identical"
+
+
 # ---------------------------------------------------------------------------
 # sort_results
 # ---------------------------------------------------------------------------

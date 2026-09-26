@@ -250,3 +250,108 @@ def test_private_words_come_from_ignored_file_and_env(cr, tmp_path, monkeypatch)
 def test_private_words_file_is_git_ignored():
     root = __import__("pathlib").Path(__file__).resolve().parent.parent
     assert ".private-words" in (root / ".gitignore").read_text(encoding="utf-8")
+
+
+# --- iter_repo_files(): git-based listing, with a walk fallback -------------
+#
+# iter_repo_files() used to always walk REPO_ROOT.rglob("*"), which meant a local, .gitignore'd
+# folder such as .venv got scanned like any tracked file -- a single virtualenv can contain
+# thousands of files carrying the machine's own home directory path. It now lists files from
+# `git ls-files` (tracked + untracked-not-ignored) when git is available, and only falls back
+# to walking the tree when it is not.
+
+
+def test_iter_repo_files_fallback_walk_skips_venv_and_friends(cr, tmp_path, monkeypatch):
+    """With git unavailable (_git_repo_files -> None), the walk fallback must still skip a
+    local .venv (and the other tooling folders it never makes sense to scan)."""
+    monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(cr, "_git_repo_files", lambda root: None)
+    (tmp_path / "notes.md").write_text("nothing personal here\n", encoding="utf-8")
+    for folder in (".venv", "venv", "node_modules", ".tox"):
+        site = tmp_path / folder / "sub"
+        site.mkdir(parents=True)
+        (site / "bad.pth").write_text("C:\\Users\\someone\\dev\n", encoding="utf-8")
+
+    rels = {p.as_posix() for p in cr.iter_repo_files()}
+
+    assert "notes.md" in rels
+    assert not any(folder in r for r in rels for folder in (".venv", "venv", "node_modules", ".tox"))
+    assert cr.check_personal_paths() == []
+
+
+def test_iter_repo_files_uses_git_listing_when_available(cr, tmp_path, monkeypatch):
+    """When the git-based listing succeeds, iter_repo_files uses exactly what it returns
+    instead of walking the tree -- so a file git does not list (here standing in for a
+    .gitignore'd, untracked file) is never scanned even though it sits right there on disk
+    with a personal path inside it."""
+    monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
+    (tmp_path / "tracked.md").write_text("clean\n", encoding="utf-8")
+    ignored_dir = tmp_path / ".venv"
+    ignored_dir.mkdir()
+    (ignored_dir / "secret.txt").write_text("C:\\Users\\someone\\dev\n", encoding="utf-8")
+    monkeypatch.setattr(cr, "_git_repo_files", lambda root: [Path("tracked.md")])
+
+    rels = {p.as_posix() for p in cr.iter_repo_files()}
+
+    assert rels == {"tracked.md"}
+    assert cr.check_personal_paths() == []
+
+
+def test_iter_repo_files_skips_git_entries_that_no_longer_exist(cr, tmp_path, monkeypatch):
+    monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
+    (tmp_path / "here.md").write_text("ok\n", encoding="utf-8")
+    monkeypatch.setattr(cr, "_git_repo_files", lambda root: [Path("here.md"), Path("gone.md")])
+
+    assert {p.as_posix() for p in cr.iter_repo_files()} == {"here.md"}
+
+
+def test_git_repo_files_returns_none_outside_a_git_work_tree(cr, tmp_path):
+    """A plain tmp_path (not under any .git) is not a git work tree, so the git-based listing
+    must report None -- the signal iter_repo_files() uses to fall back to walking."""
+    assert cr._git_repo_files(tmp_path) is None
+
+
+def test_git_repo_files_returns_none_when_git_is_missing(cr, tmp_path, monkeypatch):
+    def fake_run(cmd, **kwargs):
+        raise FileNotFoundError("git not found")
+
+    monkeypatch.setattr(cr.subprocess, "run", fake_run)
+
+    assert cr._git_repo_files(tmp_path) is None
+
+
+def test_git_repo_files_parses_null_separated_output(cr, tmp_path, monkeypatch):
+    """_git_repo_files() is exercised with a mocked subprocess.run (rather than a real git
+    repo) so it is deterministic and does not depend on git being installed; it checks the
+    command it runs and that it decodes the NUL-separated tracked + untracked-not-ignored
+    output `git ls-files -z --cached --others --exclude-standard` produces."""
+    calls = {}
+
+    class FakeCompleted:
+        returncode = 0
+        stdout = b"tracked.md\x00sub/dir/other.py\x00"
+
+    def fake_run(cmd, **kwargs):
+        calls["cmd"] = cmd
+        calls["kwargs"] = kwargs
+        return FakeCompleted()
+
+    monkeypatch.setattr(cr.subprocess, "run", fake_run)
+
+    result = cr._git_repo_files(tmp_path)
+
+    assert result == [Path("tracked.md"), Path("sub/dir/other.py")]
+    assert calls["cmd"] == ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"]
+    assert calls["kwargs"]["cwd"] == str(tmp_path)
+    assert calls["kwargs"]["stdin"] == cr.subprocess.DEVNULL
+    assert calls["kwargs"]["timeout"] == cr.GIT_LS_FILES_TIMEOUT
+
+
+def test_git_repo_files_returns_none_on_nonzero_exit(cr, tmp_path, monkeypatch):
+    class FakeCompleted:
+        returncode = 128
+        stdout = b""
+
+    monkeypatch.setattr(cr.subprocess, "run", lambda cmd, **kwargs: FakeCompleted())
+
+    assert cr._git_repo_files(tmp_path) is None

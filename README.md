@@ -199,7 +199,7 @@ Running the command again with other sheets replaces the window's contents
 python rv-review/scripts/compare_dirs.py shots/baseline shots/candidate --out review/compare
 python rv-review/scripts/compare_dirs.py --adapter playwright . --out review/visual
 python rv-review/scripts/web_capture.py http://localhost:3000/ --version after --out caps
-python rv-review/scripts/review_set.py caps --out review/versions
+python rv-review/scripts/review_set.py caps --out review/versions   # caps/before, caps/after: before first
 python rv-review/scripts/rasterize.py icons/*.svg --out review/icons --scale 4
 python rv-review/scripts/rv_review.py --frames-json review/compare/frames.json
 ```
@@ -256,6 +256,16 @@ runs are in [`rv-review/references/rv-commands.md`](rv-review/references/rv-comm
 - **A wipe shows only one image**: 0.2.1 and later open the wipe split down the middle
   (first source left, second right). In a window loaded by an older version, drag the wipe
   edge in from the side of the frame.
+- **Web captures or SVG rasterising time out, although the PNGs exist**: some Chrome builds
+  never exit after `--screenshot`. 0.2.2 and later stop the browser once the PNG is complete
+  and prefer a `chrome-headless-shell` (on PATH or Playwright's); set `CHROME_PATH` to pick a
+  browser yourself.
+- **A frame shows "error reading" but the load said ok**: 0.2.2 and later decode every still
+  and the first frame of each sequence before loading and report failures in `errors`
+  (exit 3). Re-render or re-export the file; `--no-decode-check` skips the check.
+- **macOS: the RV window did not update**: a covered RV window may not repaint, and a
+  refreshed review may stay behind other apps. Click the RV window; the read-back in the
+  JSON is correct either way.
 
 ## Development
 

@@ -15,11 +15,15 @@ Page names come from --names, else the URL path ("/" -> index, "/pricing" -> pri
 HTML file's name, so the same page gets the same name in every version.
 
 Backends (first found, or --backend): Playwright for Python (import playwright), Playwright
-for Node (node can require('playwright') from the current folder), then the Chrome, Edge or
-Chromium already installed, driven headless from its command line (viewport only: no
-full-page capture, no --wait-for, one browser). Nothing is installed; --list-backends shows
-what was found. Playwright's browsers must have been installed by the user
-(playwright install).
+for Node (node can require('playwright') from the current folder), then a Chromium-based
+browser driven headless from its command line (chrome-cli: viewport only, no full-page
+capture, no --wait-for, one browser). Nothing is installed; --list-backends shows what was
+found. Playwright's browsers must have been installed by the user (playwright install).
+
+chrome-cli browser: CHROME_PATH (an executable) always wins; otherwise a chrome-headless-shell
+is preferred (on PATH, then Playwright's copy, newest first; `playwright install chromium`
+fetches it), then an installed Chrome, Chromium or Edge. The browser is stopped as soon as
+the screenshot is complete, since some Chrome builds never exit after writing it.
 
 Full pages: --full-page captures the whole scroll height (Playwright only). Tall pages stay
 one tall frame (RV fits it to the window: F fits, 1 shows 1:1, Alt+drag or middle-drag pans)
@@ -36,6 +40,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import pathname2url
@@ -48,6 +53,12 @@ NAV_TIMEOUT_MS = 30000
 
 CHROME_NAMES = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome",
                 "msedge", "microsoft-edge", "microsoft-edge-stable")
+SHELL_NAMES = ("chrome-headless-shell",)       # always headless; tried before full browsers
+CHROME_TIMEOUT = 120.0         # seconds per screenshot before giving up
+CHROME_POLL = 0.1              # seconds between checks for the screenshot
+CHROME_EXIT_GRACE = 1.0        # seconds the browser gets to quit by itself once the file is done
+CHROME_KILL_GRACE = 3.0        # seconds between SIGTERM and SIGKILL when stopping it
+WRITTEN_MARK = "bytes written to file"        # Chrome's line after --screenshot
 
 
 class CaptureError(RuntimeError):
@@ -75,16 +86,82 @@ def chrome_candidates(env=None, platform=None):
     return out
 
 
-def find_chrome(env=None, platform=None, which=shutil.which):
-    """Path of a Chromium-based browser (Chrome, Edge, Chromium), or None."""
-    env = os.environ if env is None else env
-    if env.get("CHROME_PATH") and Path(env["CHROME_PATH"]).is_file():
-        return str(env["CHROME_PATH"])
-    for n in CHROME_NAMES:
-        hit = which(n, path=env.get("PATH")) if which is shutil.which else which(n)
+def playwright_roots(env=None, platform=None, home=None):
+    """Folders where Playwright keeps its browsers: PLAYWRIGHT_BROWSERS_PATH (unless 0),
+    then the per-user cache of this OS. With an injected env, home comes from HOME /
+    USERPROFILE in it (or the home argument), never from the real user."""
+    real = env is None
+    env = os.environ if real else env
+    p = platform or sys.platform
+    if home is None:
+        home = os.path.expanduser("~") if real else (env.get("HOME") or env.get("USERPROFILE"))
+    roots = []
+    custom = env.get("PLAYWRIGHT_BROWSERS_PATH")
+    if custom and custom != "0":
+        roots.append(Path(custom))
+    if p.startswith("win"):
+        if env.get("LOCALAPPDATA"):
+            roots.append(Path(env["LOCALAPPDATA"]) / "ms-playwright")
+    elif p == "darwin":
+        if home:
+            roots.append(Path(home) / "Library" / "Caches" / "ms-playwright")
+    else:
+        cache = env.get("XDG_CACHE_HOME") or (str(Path(home) / ".cache") if home else None)
+        if cache:
+            roots.append(Path(cache) / "ms-playwright")
+    return roots
+
+
+def headless_shell_candidates(env=None, platform=None, home=None):
+    """Playwright's chrome-headless-shell executables, newest revision first
+    (<root>/chromium_headless_shell-NNNN/chrome-headless-shell-<os>/chrome-headless-shell)."""
+    p = platform or sys.platform
+    exe = "chrome-headless-shell.exe" if p.startswith("win") else "chrome-headless-shell"
+    out = []
+    for root in playwright_roots(env, platform, home):
+        try:
+            entries = list(root.iterdir()) if root.is_dir() else []
+        except OSError:
+            continue
+        revs = []
+        for d in entries:
+            m = re.fullmatch(r"chromium_headless_shell-(\d+)", d.name)
+            if m and d.is_dir():
+                revs.append((int(m.group(1)), d))
+        for _, d in sorted(revs, key=lambda t: -t[0]):
+            out += [sub / exe for sub in sorted(d.glob("chrome-headless-shell-*"))]
+    return out
+
+
+def is_headless_shell(chrome):
+    """True for chrome-headless-shell (or an older headless_shell build)."""
+    first = chrome[0] if isinstance(chrome, (list, tuple)) else chrome
+    name = os.path.basename(str(first)).lower()
+    return name.startswith("chrome-headless-shell") or name.startswith("headless_shell")
+
+
+def find_chrome(env=None, platform=None, which=shutil.which, home=None):
+    """Executable for the chrome-cli backend, or None. Order: CHROME_PATH (if it is a file);
+    chrome-headless-shell on PATH; Playwright's chrome-headless-shell, newest first; Chrome,
+    Chromium or Edge on PATH; their usual install locations."""
+    e = os.environ if env is None else env
+    if e.get("CHROME_PATH") and Path(e["CHROME_PATH"]).is_file():
+        return str(e["CHROME_PATH"])
+
+    def look(n):
+        return which(n, path=e.get("PATH")) if which is shutil.which else which(n)
+    for n in SHELL_NAMES:
+        hit = look(n)
         if hit:
             return hit
-    for c in chrome_candidates(env, platform):
+    for c in headless_shell_candidates(env, platform, home):
+        if c.is_file():
+            return str(c)
+    for n in CHROME_NAMES:
+        hit = look(n)
+        if hit:
+            return hit
+    for c in chrome_candidates(e, platform):
         if c.is_file():
             return str(c)
     return None
@@ -214,11 +291,15 @@ def plan(pages, out, version="capture", breakpoints=DEFAULT_BREAKPOINTS, browser
 
 def chrome_args(chrome, url, out, width, height, scale=1.0, user_data_dir=None,
                 color_scheme=None, transparent=False):
-    """Headless Chrome / Edge command line for one viewport screenshot."""
-    args = [str(chrome), "--headless=new", "--disable-gpu", "--hide-scrollbars",
-            "--no-first-run", "--no-default-browser-check", "--disable-extensions",
-            f"--window-size={width},{height}", f"--force-device-scale-factor={scale:g}",
-            f"--screenshot={out}"]
+    """Headless Chrome / Edge command line for one viewport screenshot. chrome is a path or
+    a list (a command prefix). chrome-headless-shell is always headless and gets a plain
+    --headless; full browsers get --headless=new."""
+    exe = [str(c) for c in chrome] if isinstance(chrome, (list, tuple)) else [str(chrome)]
+    headless = "--headless" if is_headless_shell(chrome) else "--headless=new"
+    args = exe + [headless, "--disable-gpu", "--hide-scrollbars",
+                  "--no-first-run", "--no-default-browser-check", "--disable-extensions",
+                  f"--window-size={width},{height}", f"--force-device-scale-factor={scale:g}",
+                  f"--screenshot={out}"]
     if user_data_dir:
         args.append(f"--user-data-dir={user_data_dir}")
     if transparent:
@@ -229,27 +310,213 @@ def chrome_args(chrome, url, out, width, height, scale=1.0, user_data_dir=None,
     return args
 
 
-def run_chrome_cli(jobs, opts, chrome=None):
-    chrome = chrome or find_chrome()
-    done, failed = [], []
-    with tempfile.TemporaryDirectory(prefix="rv-review-chrome-") as profile:
-        for j in jobs:
-            Path(j["out"]).parent.mkdir(parents=True, exist_ok=True)
-            cmd = chrome_args(chrome, j["url"], str(Path(os.path.abspath(j["out"]))), j["width"],
-                              j["height"], opts.get("scale", 1.0), profile,
-                              opts.get("color_scheme"), opts.get("transparent", False))
-            try:
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-                ok = r.returncode == 0 and Path(j["out"]).is_file()
-            except subprocess.TimeoutExpired:
-                ok, r = False, None
-            if ok:
-                _fix_size(j["out"], round(j["width"] * opts.get("scale", 1.0)),
-                          round(j["height"] * opts.get("scale", 1.0)))
-                done.append(j["out"])
+def _screenshot_bytes(path):
+    """Size of a finished screenshot at path, else 0 (missing, empty, or a PNG whose IEND
+    chunk has not been written yet)."""
+    try:
+        size = os.path.getsize(path)
+        if size <= 0:
+            return 0
+        with open(path, "rb") as f:
+            if f.read(8) == b"\x89PNG\r\n\x1a\n":
+                f.seek(max(0, size - 12))
+                if b"IEND" not in f.read(12):
+                    return 0
+        return size
+    except OSError:
+        return 0
+
+
+def _read_tail(path, n=4000):
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - n))
+            return f.read().decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+
+def kill_process_tree(proc, grace=CHROME_KILL_GRACE):
+    """Stop proc and the processes it started. proc runs in its own process group (POSIX:
+    SIGTERM to the group, SIGKILL after grace seconds; Windows: taskkill /T /F, then
+    proc.kill()). Never touches processes outside that group / tree."""
+    if os.name == "nt":
+        try:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    else:
+        import signal
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except OSError:
+            pass
+        try:
+            proc.wait(timeout=grace)
+        except subprocess.TimeoutExpired:
+            pass
+        _kill_group(proc.pid)              # helpers that outlived the main process
+    if proc.poll() is None:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _kill_group(pgid):
+    """SIGKILL what is left of a process group started here (POSIX; no-op on Windows)."""
+    if os.name == "nt":
+        return
+    import signal
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except OSError:
+        pass
+
+
+def remove_tree(path, attempts=10, delay=0.2, sleep=time.sleep):
+    """rmtree, retried while Windows still holds files of a just-stopped browser."""
+    for _ in range(attempts):
+        try:
+            shutil.rmtree(path)
+            return True
+        except FileNotFoundError:
+            return True
+        except OSError:
+            sleep(delay)
+    shutil.rmtree(path, ignore_errors=True)
+    return not os.path.exists(path)
+
+
+def run_chrome_command(cmd, out, log_path, timeout=CHROME_TIMEOUT, poll=CHROME_POLL,
+                       exit_grace=CHROME_EXIT_GRACE, clock=time.monotonic, sleep=time.sleep,
+                       killer=None):
+    """Run one headless screenshot command and stop the browser once the file is written.
+
+    Some Chrome builds (Chrome 153 on macOS, --headless=new) write the screenshot, print
+    'N bytes written to file' and never exit, so this does not wait for the exit. It polls
+    for a finished file (non-empty, a complete PNG, and the same size on two polls or
+    confirmed by that line), gives the browser exit_grace seconds to quit, then stops it
+    and its helpers (killer, default kill_process_tree). Output goes to log_path.
+
+    Returns a dict: ok, out, exited (quit by itself), stopped (stopped here), timed_out,
+    returncode, seconds, note, error, output (tail of the browser's output)."""
+    killer = killer or kill_process_tree
+    out = os.path.abspath(str(out))
+    res = {"ok": False, "out": out, "exited": False, "stopped": False, "timed_out": False,
+           "returncode": None, "seconds": 0.0, "note": None, "error": None, "output": ""}
+    t0 = clock()
+    try:
+        os.remove(out)                     # an old file would look finished at once
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        res["error"] = f"cannot replace {out}: {e}"
+        return res
+    if os.name == "nt":
+        group = {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+    else:
+        group = {"start_new_session": True}
+    with open(log_path, "wb") as log:
+        try:
+            proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=log,
+                                    stderr=subprocess.STDOUT, **group)
+        except OSError as e:
+            res["error"] = f"could not start {cmd[0]}: {e}"
+            return res
+        try:
+            last, done_at = 0, None
+            while True:
+                if proc.poll() is not None:
+                    res["exited"] = True
+                    break
+                now = clock()
+                if done_at is None:
+                    size = _screenshot_bytes(out)
+                    if size and (size == last or WRITTEN_MARK in _read_tail(log_path)):
+                        done_at = now
+                    last = size
+                if done_at is not None and now - done_at >= exit_grace:
+                    break
+                if now - t0 >= timeout:
+                    res["timed_out"] = True
+                    break
+                sleep(poll)
+        finally:
+            if proc.poll() is None:
+                killer(proc)
+                res["stopped"] = True
             else:
-                failed.append({"out": j["out"], "error": (r.stderr[-400:] if r else "timed out")})
-    return done, failed
+                res["exited"] = True
+                _kill_group(proc.pid)      # helpers left behind by a browser that quit
+            res["returncode"] = proc.poll()
+    res["seconds"] = round(clock() - t0, 2)
+    res["output"] = _read_tail(log_path, 600).strip()
+    rc = res["returncode"]
+    if _screenshot_bytes(out):
+        res["ok"] = True
+        if res["timed_out"]:
+            res["note"] = (f"the browser was still running after {timeout:g} s; the "
+                           f"screenshot was complete, so it was stopped")
+        elif res["stopped"]:
+            res["note"] = "the browser kept running after writing the screenshot; stopped it"
+        elif rc:
+            res["note"] = f"the browser exited with status {rc} after writing the screenshot"
+    else:
+        if res["timed_out"]:
+            why = f"timed out after {timeout:g} s without a screenshot"
+        else:
+            why = f"the browser exited with status {rc} without writing the screenshot"
+        res["error"] = why + (f": {res['output'][-400:]}" if res["output"] else "")
+    return res
+
+
+def chrome_screenshot(chrome, url, out, width, height, scale=1.0, color_scheme=None,
+                      transparent=False, extra_args=(), timeout=CHROME_TIMEOUT, **run_kw):
+    """One headless screenshot with a fresh temporary profile (rv-review-chrome-*), removed
+    afterwards. extra_args go before the URL. Returns run_chrome_command's dict plus
+    'profile' (the removed folder)."""
+    work = tempfile.mkdtemp(prefix="rv-review-chrome-")
+    try:
+        cmd = chrome_args(chrome, url, os.path.abspath(str(out)), width, height, scale,
+                          os.path.join(work, "profile"), color_scheme, transparent)
+        cmd[-1:-1] = [str(a) for a in extra_args]
+        res = run_chrome_command(cmd, out, os.path.join(work, "chrome.log"), timeout, **run_kw)
+    finally:
+        remove_tree(work)
+    res["profile"] = work
+    return res
+
+
+def run_chrome_cli(jobs, opts, chrome=None, shoot=None):
+    """Capture jobs with a headless browser; returns (done, failed, notes)."""
+    chrome = chrome or find_chrome()
+    shoot = shoot or chrome_screenshot
+    scale = opts.get("scale", 1.0)
+    done, failed, stopped = [], [], 0
+    for j in jobs:
+        Path(j["out"]).parent.mkdir(parents=True, exist_ok=True)
+        r = shoot(chrome, j["url"], j["out"], j["width"], j["height"], scale,
+                  opts.get("color_scheme"), opts.get("transparent", False))
+        if r["ok"]:
+            _fix_size(j["out"], round(j["width"] * scale), round(j["height"] * scale))
+            done.append(j["out"])
+            stopped += bool(r.get("stopped"))
+        else:
+            failed.append({"out": j["out"], "error": r.get("error") or "failed"})
+    notes = [f"browser: {chrome}"]
+    if stopped:
+        notes.append(f"the browser kept running after {stopped} screenshot(s) and was stopped "
+                     f"once each file was complete (a chrome-headless-shell avoids this; "
+                     f"see CHROME_PATH)")
+    return done, failed, notes
 
 
 def _fix_size(path, w, h):
@@ -381,8 +648,8 @@ def capture(jobs, backend, opts):
         if {j["browser"] for j in jobs} - {"chromium"}:
             raise CaptureError("the chrome-cli backend captures Chromium only; install "
                                "Playwright for firefox / webkit")
-        done, failed = run_chrome_cli(jobs, opts)
-        return done, failed, skipped
+        done, failed, notes = run_chrome_cli(jobs, opts)
+        return done, failed, skipped + notes
     run = run_playwright_python if backend == "playwright-python" else run_playwright_node
     done, failed = run(jobs, opts)
     return done, failed, []

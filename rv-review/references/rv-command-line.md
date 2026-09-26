@@ -42,6 +42,10 @@ to `<system temp>/tweak_rv_proc/<pid>[_<tag>]`. If none answers, it starts `rv -
 from its own bin folder (or `RVPUSH_RV_EXECUTABLE_PATH`; set that to `none` to never start
 one). *verified: help text and exit codes below.*
 
+Run every command below with `RVPUSH_RV_EXECUTABLE_PATH=none` set (bash:
+`RVPUSH_RV_EXECUTABLE_PATH=none rvpush ...`; PowerShell: `$env:RVPUSH_RV_EXECUTABLE_PATH =
+'none'` once), or a plain rvpush starts a new RV whenever none answers the tag.
+
 ```text
 rvpush [-tag T] set   <media args>        replace the session's media
 rvpush [-tag T] merge <media args>        add media to the session

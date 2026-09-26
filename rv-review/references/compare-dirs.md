@@ -31,8 +31,13 @@ python scripts/rv_review.py --frames-json review/compare/frames.json
 ## What is measured
 
 On 8-bit RGBA with colour premultiplied by alpha (colour under fully transparent pixels does
-not count). 16-bit PNG / TIFF is scaled to 8 bits, not clipped. EXR and DPX are not read here:
-convert them with rvio first, or review them with RV's own wipe and difference.
+not count). 16-bit and float greyscale PNG / TIFF are scaled to 8 bits for the frames, not
+clipped; when both sides of a pair are, the metrics use every level of the originals, so a
+change smaller than one 8-bit level still counts (`measured_depth: "full"` in the report,
+otherwise `"8-bit"`). Pillow reads 16-bit colour PNG / TIFF as 8 bits, so those are measured
+at 8 bits: a change below one 8-bit level only shows where rounding crosses a level. EXR and
+DPX are not read here: convert them with rvio first, or review them with RV's own wipe and
+difference.
 
 | Metric | Meaning |
 |---|---|
@@ -126,9 +131,22 @@ screen and one frame per variant:
 
 ```bash
 python scripts/review_set.py caps --out review/devices                 # sub-folders = variants
+python scripts/review_set.py caps --out review/versions                # caps/before, caps/after
 python scripts/review_set.py caps/light caps/dark caps/high-contrast --out review/appearance
 python scripts/review_set.py screenshots --order en-US,de-DE,ar-SA --out review/locales
 ```
+
+Order, unless `--order` is given (it always wins):
+
+- **Variants.** Folders passed one by one keep the order given. Sub-folders of a ROOT are
+  sorted naturally (`v1`, `v2`, `v10`), except that when every name belongs to a known pair
+  they go in review order (`before, after`, `baseline, candidate`, `old, new`,
+  `expected, actual`, `reference, actual`; any case), and when every name is a breakpoint
+  they go by width (below).
+- **Screens.** Natural order by name, except that web_capture.py names
+  `<page>__<breakpoint>.png` (and their `__t01` tiles) keep each page's breakpoints in width
+  order: a known name (`xs`, `sm`, `md`, `lg`, `xl`, `2xl`, `phone`, `mobile`, `tablet`,
+  `laptop`, `desktop`, `wide`) or a width in the name (`w375`, `1440`, `768x1024`).
 
 - Each variant is a folder; files pair by relative path. Missing screens get a "missing in
   <variant>" placeholder so frames never shift; `--skip-incomplete` drops such screens.

@@ -5,6 +5,28 @@ All notable changes to this project are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The version matches `metadata.version` in each
 skill's `SKILL.md` and the marketplace entry.
 
+## [0.2.2] - 2026-09-26
+
+### Fixed
+
+- `rv-review`: headless Chrome is no longer waited on until it exits. `web_capture.py` and `rasterize.py` stop the browser and its helper processes once the screenshot PNG is complete, so builds that never exit after `--screenshot` (Chrome 153 on macOS) no longer report every capture as failed after 120 s. A `chrome-headless-shell` (on PATH, or Playwright's, newest first) is preferred after `CHROME_PATH`, each capture's temporary profile is removed, and `rasterize.py --help` documents `CHROME_PATH`.
+- `app_capture.py ios` passes absolute paths to `simctl io screenshot` (a relative `--out` failed with Xcode 26.4) and restores the text size when simctl reports it as `Small` / `extra-Small`. A setting that cannot be read or restored is reported in `warnings`, and `--dry-run` lists the restore commands.
+- A truncated or corrupt still loaded with `ok: true` because RV shows "error reading" on screen but logs nothing. `rv_review.py` now decodes every still and the first frame of every sequence before the load (header and end checks, plus a full decode of PNG / JPEG / GIF / BMP / WebP when Pillow is installed). Failures still load but are listed in `errors` with exit 3. `--no-decode-check` skips the check.
+- `--export-annotated` wrote linear values (frames too dark); rvio now runs with `-outsrgb`, and the exported pixels match the source.
+- When the RV it launched exits before answering, the launcher now says "RV exited after N s (exit code X)" instead of "did not answer within 60 s". The `RvNetwork: no session for incoming connection` / `connection aborted reading greeting` lines that its own polling causes, and RV's "trying brute force to find an image reader" line, no longer count as load errors.
+- `errors` and `warnings` are always lists, also in `--state`, `--notes` and error results.
+- `scripts/check_repo.py` lists files with `git ls-files`, so an in-repo `.venv` no longer fails the check or its tests. Without git it skips `.venv`, `venv`, `.tox`, `node_modules`, `dist`, `build` and `.mypy_cache`.
+
+### Changed
+
+- Frame labels made by `compare_dirs.py`, `review_set.py` and `sheet_panels.py label` sit in the title band under the title instead of over the image. The band, fonts and label box grow with the image (for example 1440 px pages and 1206 x 2622 phone captures), so they stay readable when RV fits the frame to its window. `sheet_panels.py split` is unchanged.
+- `review_set.py` orders the sub-folders of a ROOT in review order: before, after / baseline, candidate / old, new / expected, actual, and breakpoints by width. Screens named `<page>__<breakpoint>` go in width order. `--order` still wins.
+- `compare_dirs.py` measures 16-bit and float greyscale pairs on every level (`measured_depth: "full"`); other inputs, including 16-bit colour that Pillow reads as 8 bits, are measured at 8 bits, as now documented.
+- After a refresh the review window is raised (best effort); SKILL.md notes that on macOS a covered RV window may not repaint.
+- Every raw `rvpush` example in the references sets `RVPUSH_RV_EXECUTABLE_PATH=none`, because a plain rvpush starts a new RV when none answers.
+- Deprecated `Image.fromarray(arr, mode)` calls replaced (removed in Pillow 13).
+- Versions: rv-review 0.2.2.
+
 ## [0.2.1] - 2026-09-26
 
 ### Fixed
@@ -77,6 +99,7 @@ skill's `SKILL.md` and the marketplace entry.
 - Claude Code plugin marketplace (`.claude-plugin/marketplace.json`), trigger evals, tests and
   CI on Windows, macOS and Linux.
 
+[0.2.2]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.2
 [0.2.1]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.1
 [0.2.0]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.1.0

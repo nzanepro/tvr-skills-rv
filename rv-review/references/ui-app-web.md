@@ -61,10 +61,16 @@ python scripts/web_capture.py site_v1/index.html --version v1 --out caps --full-
   `--wait-ms 500`. Hide or freeze dynamic content (clocks, carousels, ads) in the page or a
   test build; `--reduced-motion` asks pages to stop animating.
 - `--color-scheme dark`, `--locale ar-EG` emulate user preferences (Playwright).
-- Backends: Playwright for Python, Playwright for Node (from the current project), else an
-  installed Chrome / Edge / Chromium from its command line (viewport only: no `--full-page`,
-  no `--wait-for`, Chromium only; `CHROME_PATH` picks the browser). `--list-backends` shows
-  what is present; nothing is installed. `--dry-run` prints the plan.
+- Backends: Playwright for Python, Playwright for Node (from the current project), else a
+  headless browser from its command line (viewport only: no `--full-page`, no `--wait-for`,
+  Chromium only). `--list-backends` shows what is present and which browser was picked;
+  nothing is installed. `--dry-run` prints the plan.
+- Command-line browser: `CHROME_PATH` (an executable) always wins. Otherwise a
+  `chrome-headless-shell` is preferred: on PATH, then Playwright's copy (newest first, under
+  `PLAYWRIGHT_BROWSERS_PATH` or Playwright's cache; `playwright install chromium` fetches
+  it), then an installed Chrome, Chromium or Edge. Some Chrome builds write the screenshot
+  and never exit, so the script stops the browser once the PNG is complete and reports it in
+  the JSON `notes`; each capture uses a temporary profile that is removed afterwards.
 - **Tall pages.** `--full-page` keeps one tall frame per page: in RV press F to fit it, 1 for
   1:1 pixels, and Alt+drag (or middle-drag) to pan. `--tile-height 3000` splits it into tiles
   (`__t01`, `__t02` ...) that flip like frames; two versions of different heights then show
@@ -76,8 +82,11 @@ To flip one page through its breakpoints, make the breakpoints the variants:
 
 ```bash
 python scripts/web_capture.py http://localhost:3000/ http://localhost:3000/pricing   --version after --group-by breakpoint --out caps
-python scripts/review_set.py caps/after --order mobile,tablet,desktop --out review/responsive
+python scripts/review_set.py caps/after --out review/responsive
 ```
+
+Breakpoint folders sort by width (mobile, tablet, desktop; or `w375`, `w1440`); pass
+`--order` for any other order.
 
 `--group-by breakpoint` writes `caps/<version>/<breakpoint>/<page>.png`; each page becomes a
 screen with one frame per breakpoint, padded to the widest (top-left), so layouts line up at
@@ -95,7 +104,8 @@ with `rv_review.py A B --compare wipe`.
 ## SVG: icons and illustrations
 
 RV does not read SVG. `rasterize.py` renders with the first backend found: resvg,
-rsvg-convert, CairoSVG, Inkscape, Playwright's Chromium, then an installed Chrome / Edge.
+rsvg-convert, CairoSVG, Inkscape, Playwright's Chromium, then a headless browser picked as
+for `web_capture.py` (`CHROME_PATH`, a `chrome-headless-shell`, then Chrome / Edge).
 Renderers differ (fonts, filters, text), so render every version with one backend; the JSON
 says which was used.
 
@@ -126,9 +136,16 @@ It runs `xcrun simctl ui <device> appearance light|dark`, `xcrun simctl ui <devi
 content_size <size>` (Dynamic Type: extra-small ... extra-extra-extra-large,
 accessibility-medium ... accessibility-extra-extra-extra-large), optionally `xcrun simctl
 status_bar <device> override` for a fixed 9:41 status bar, and `xcrun simctl io <device>
-screenshot --type=png <file>`, then restores the appearance and text size. `--locales
-en-US,ar-SA --bundle <id>` relaunches the app with the standard `-AppleLanguages (ar)
--AppleLocale ar_SA` launch arguments. Several device sizes: boot each simulator and pass
+screenshot --type=png <file>`, then restores the appearance and text size (matched
+case-insensitively against what the simulator reports back, since simctl has been seen
+answering `content_size` with mixed case such as "extra-Small"). `--out` is resolved to an
+absolute path before any of this runs, because simctl's screenshot needs an absolute path and
+will not resolve a relative one against this script's working directory. If a setting cannot
+be read or put back afterwards, that goes into a "warnings" list in the JSON output instead of
+being skipped silently; `--dry-run` previews the restore commands in a "restore" list, with a
+`<current>` placeholder for the value (nothing is queried from the simulator in a dry run).
+`--locales en-US,ar-SA --bundle <id>` relaunches the app with the standard `-AppleLanguages
+(ar) -AppleLocale ar_SA` launch arguments. Several device sizes: boot each simulator and pass
 `--device <UDID>` (`xcrun simctl list devices available`); name the variants by device with
 separate `--out` folders or rename the variant folders.
 

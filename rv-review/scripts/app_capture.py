@@ -21,7 +21,11 @@ ANDROID_SDK_ROOT) and one device or emulator (or --serial); Electron needs Node 
 project's own Playwright (Playwright's Electron support is experimental). --dry-run prints the
 commands without running anything, on any OS.
 
-Output: one JSON line with the files written and the commands run.
+Output: one JSON line with the files written and the commands run. A "warnings" list (always
+present, possibly empty) notes any setting that could not be read or put back afterwards
+instead of failing silently. For iOS, --dry-run also fills a "restore" list previewing the
+settings-restore commands; since nothing is queried from the simulator in a dry run, the value
+being restored is shown as the placeholder "<current>".
 Exit status: 0 captured, 1 a capture failed, 2 tool or device missing / bad arguments.
 """
 import argparse
@@ -46,6 +50,10 @@ IOS_SHORT = {"extra-small": "xs", "small": "s", "medium": "m", "large": "l", "ex
              "accessibility-medium": "ax1", "accessibility-large": "ax2",
              "accessibility-extra-large": "ax3", "accessibility-extra-extra-large": "ax4",
              "accessibility-extra-extra-extra-large": "ax5"}
+# simctl reports content_size back with inconsistent case (seen: "Small", "extra-Small"), so the
+# value read back is matched case-insensitively against IOS_CONTENT_SIZES / ("light", "dark")
+# and restored using the canonical lower-case spelling.
+IOS_DRY_RUN_PLACEHOLDER = "<current>"
 
 
 class CaptureError(RuntimeError):
@@ -99,6 +107,38 @@ def ios_status_bar(device, clean=True):
     x = ["xcrun", "simctl", "status_bar", device]
     return x + (["override", "--time", "9:41", "--batteryState", "charged", "--batteryLevel", "100",
                  "--cellularBars", "4", "--wifiBars", "3"] if clean else ["clear"])
+
+
+def _canon_ios_appearance(value):
+    """The canonical lower-case appearance for a value simctl reported, or None when it is
+    not one of the two recognized appearances."""
+    v = (value or "").strip().lower()
+    return v if v in ("light", "dark") else None
+
+
+def _canon_ios_content_size(value):
+    """The canonical lower-case content size for a value simctl reported (matched
+    case-insensitively, since simctl has been seen returning "Small" / "extra-Small"), or None
+    when it is not one of IOS_CONTENT_SIZES."""
+    v = (value or "").strip().lower()
+    return v if v in IOS_CONTENT_SIZES else None
+
+
+def _plan_ios_restore(get_cmd, set_prefix, setting, canonicalize, warnings):
+    """Read one device setting with `get_cmd` and return the simctl command that restores it,
+    or None. Appends a "warnings" entry -- instead of restoring nothing and saying nothing --
+    when the setting cannot be read, or comes back as a value that is not recognized."""
+    try:
+        raw = _run(get_cmd, False, []).strip()
+    except (CaptureError, OSError, subprocess.SubprocessError) as e:
+        warnings.append(f"could not read the current {setting} to restore it afterwards: {e}")
+        return None
+    canon = canonicalize(raw)
+    if canon is None:
+        if raw:
+            warnings.append(f"unrecognized current {setting} {raw!r}; not restoring it")
+        return None
+    return set_prefix + [canon]
 
 
 # --- Android ----------------------------------------------------------------------------
@@ -195,21 +235,31 @@ def capture_ios(a, dry):
     if not dry and (sys.platform != "darwin" or not shutil.which("xcrun")):
         raise CaptureError("iOS Simulator capture needs macOS with Xcode (xcrun simctl); use "
                            "--dry-run to see the commands")
+    a.out = os.path.abspath(a.out)  # xcrun simctl io ... screenshot needs an absolute --out
     variants = ios_variants(_list(a.appearance, ("light", "dark"), "appearance"),
                             _list(a.content_size, IOS_CONTENT_SIZES, "content size"),
                             _list(a.locales))
     if any(v[1]["locale"] for v in variants) and not a.bundle:
         raise CaptureError("--locales relaunches the app with a language: pass --bundle ID")
-    log, files = [], []
-    restore = []
-    if not dry:
+    log, files, warnings = [], [], []
+    if dry:
+        # nothing is queried from the simulator in a dry run, so the value being put back is
+        # unknown until the capture actually runs; show the shape of the restore commands anyway
+        restore = [["xcrun", "simctl", "ui", a.device, "appearance", IOS_DRY_RUN_PLACEHOLDER],
+                  ["xcrun", "simctl", "ui", a.device, "content_size", IOS_DRY_RUN_PLACEHOLDER]]
+    else:
         # remember what to put back
-        cur_ap = _run(["xcrun", "simctl", "ui", a.device, "appearance"], dry, []).strip()
-        cur_cs = _run(["xcrun", "simctl", "ui", a.device, "content_size"], dry, []).strip()
-        if cur_ap in ("light", "dark"):
-            restore.append(["xcrun", "simctl", "ui", a.device, "appearance", cur_ap])
-        if cur_cs in IOS_CONTENT_SIZES:
-            restore.append(["xcrun", "simctl", "ui", a.device, "content_size", cur_cs])
+        restore = []
+        c = _plan_ios_restore(["xcrun", "simctl", "ui", a.device, "appearance"],
+                              ["xcrun", "simctl", "ui", a.device, "appearance"],
+                              "appearance", _canon_ios_appearance, warnings)
+        if c:
+            restore.append(c)
+        c = _plan_ios_restore(["xcrun", "simctl", "ui", a.device, "content_size"],
+                              ["xcrun", "simctl", "ui", a.device, "content_size"],
+                              "content size", _canon_ios_content_size, warnings)
+        if c:
+            restore.append(c)
     try:
         if a.clean_status_bar:
             _run(ios_status_bar(a.device, True), dry, log)
@@ -225,11 +275,17 @@ def capture_ios(a, dry):
             _run(cmds[-1], dry, log)
             files.append(str(png))
     finally:
-        if a.clean_status_bar:
-            _run(ios_status_bar(a.device, False), dry, log)
         for c in restore:
-            _run(c, dry, log)
-    return files, log
+            try:
+                _run(c, dry, log)
+            except (CaptureError, OSError, subprocess.SubprocessError) as e:
+                warnings.append(f"could not restore with {' '.join(map(str, c))}: {e}")
+        if a.clean_status_bar:
+            try:
+                _run(ios_status_bar(a.device, False), dry, log)
+            except (CaptureError, OSError, subprocess.SubprocessError) as e:
+                warnings.append(f"could not clear the status bar override: {e}")
+    return files, log, warnings, restore
 
 
 def capture_android(a, dry):
@@ -359,7 +415,10 @@ def build_parser():
         p.add_argument("--out", required=True, metavar="DIR", help="capture root")
         p.add_argument("--settle", type=float, default=SETTLE_S,
                        help=f"seconds to wait after a settings change (default {SETTLE_S})")
-        p.add_argument("--dry-run", action="store_true", help="print the commands only")
+        p.add_argument("--dry-run", action="store_true",
+                       help="print the commands only (iOS also fills a 'restore' preview, "
+                            "with a '<current>' placeholder for the setting being put back "
+                            "since nothing is queried from the simulator in a dry run)")
 
     i = sub.add_parser("ios", help="iOS Simulator (macOS + Xcode)",
                        description="Capture the booted iOS Simulator in several appearances, "
@@ -395,9 +454,10 @@ def build_parser():
 
 def main(argv=None):
     a = build_parser().parse_args(argv)
+    a.out = os.path.abspath(a.out)  # resolved up front so every derived path is absolute
     try:
         fn = {"ios": capture_ios, "android": capture_android, "electron": capture_electron}[a.platform]
-        files, log = fn(a, a.dry_run)
+        result = fn(a, a.dry_run)
     except CaptureError as e:
         print(f"app_capture: {e}", file=sys.stderr)
         print(json.dumps({"ok": False, "error": str(e)}))
@@ -405,8 +465,14 @@ def main(argv=None):
     except (OSError, subprocess.SubprocessError) as e:
         print(json.dumps({"ok": False, "error": str(e)}))
         return 1
+    if len(result) == 4:            # ios: files, commands, warnings, restore preview
+        files, log, warnings, restore = result
+    else:                           # android / electron: no warnings/restore support (yet)
+        files, log = result
+        warnings, restore = [], []
     print(json.dumps({"ok": True, "dry_run": a.dry_run, "platform": a.platform,
-                      "root": str(Path(os.path.abspath(a.out))), "files": files, "commands": log}))
+                      "root": str(Path(a.out)), "files": files, "commands": log,
+                      "warnings": warnings, "restore": restore}))
     return 0
 
 

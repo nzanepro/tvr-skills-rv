@@ -54,9 +54,15 @@ come out wrong, or when designing a script that makes new comparison sheets.
 
 ## label, for renders that were never stacked
 
-`label --title TEXT --out DIR a.png=before b.png=after` adds a 50 px (24, 24, 24) title band
-with the title (30 px Arial, falling back to Pillow's built-in font) and a black label box
-with 20 px white text below the band's left edge. All images must be the same size.
+`label --title TEXT --out DIR a.png=before b.png=after` adds a (24, 24, 24) title band above
+each image with two rows: the title (30 px Arial, else DejaVu Sans or Pillow's built-in font)
+and under it a light label box with 26 px black text. Nothing is drawn over the image. The
+band, fonts and box grow with the image once it is larger than 1280 x 800 (by the larger of
+width / 1280 and height / 800), so they stay readable when RV fits the frame to its window:
+a 1440 px wide page gets a 36 px title, a 1206 x 2622 phone capture a 98 px one. A title or
+label too long for the width is shortened with "...". `compare_dirs.py` and `review_set.py`
+draw their frames the same way. All images must be the same size. `split` draws nothing: its
+frames keep the sheet's own title band and label boxes.
 
 ## Checklist for a script that makes sheets
 

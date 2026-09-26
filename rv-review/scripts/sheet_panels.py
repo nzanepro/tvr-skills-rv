@@ -28,9 +28,10 @@ split  SHEET [SHEET ...] --out DIR
     and prints the frame paths, one per line.
 
 label  --title TEXT --out DIR IMAGE=LABEL [IMAGE=LABEL ...]
-    For renders that were never stacked: add a title band above each image and a label
-    box in its top-left corner, so the frames look like split sheet frames. All images
-    must be the same size. Prints the frame paths, one per line.
+    For renders that were never stacked: add a title band above each image holding the
+    title and, under it, a label box; nothing is drawn over the image. Band, fonts and box
+    grow with the image (frame_layout) so they stay readable when RV fits the frame to its
+    window. All images must be the same size. Prints the frame paths, one per line.
 
 Exit status is 0 on success; problems (not a stacked sheet, mismatched sizes) exit
 non-zero with a message on stderr.
@@ -50,30 +51,96 @@ BG_TOLERANCE = 2          # max per-channel difference still counted as backgrou
 MIN_PANEL_PX = 64         # a non-background run shorter than this is stray text or a rule, not a panel
 MIN_PANEL_WIDTH_DIV = 8   # ... or shorter than width / 8, so thin rules on wide sheets are skipped too
 
-# --- label: title band and label box drawn on unstacked renders ----------------
+# --- label: title band and label box drawn on generated frames ---------------------
+# Frames the scripts generate (label, compare_dirs.py, review_set.py) carry a title band
+# above the image with two rows: the title, and under it a label box naming the frame.
+# Nothing is drawn over the image. Sizes are given for scale 1 and grow with the image, so
+# the text stays readable when RV fits the whole frame in its window: an image larger than
+# REF_VIEW in either direction scales everything up by the larger ratio (a 1440 x 900 page
+# by 1.2, a 1206 x 2622 phone capture by 3.3).
+REF_VIEW = (1280, 800)              # a typical RV viewer area; bigger frames are shrunk to fit it
 BG = (24, 24, 24)                   # dark neutral grey: reads as "not image" and keeps text legible
-TITLE_BAND_H = 50                   # room for a 30 px title with even margins above and below
-TITLE_FONT_SIZE = 30                # readable at a glance when RV fits a whole frame on screen
-TITLE_TEXT_POS = (16, 10)           # left and top margin of the title inside the band
+TITLE_FONT_SIZE = 30                # title text, at scale 1
 TITLE_TEXT_COLOR = (235, 235, 235)  # off-white, softer than pure white on the dark band
-LABEL_FONT_SIZE = 20                # smaller than the title so the label reads as secondary
-LABEL_BOX_LEFT = 10                 # label box inset from the image's left edge
-LABEL_BOX_TOP = 10                  # label box inset below the title band
-LABEL_BOX_H = 40                    # box height: 20 px text plus padding
-LABEL_PAD_X = 10                    # space between the box edges and the label text, left and right
-LABEL_PAD_Y = 4                     # space between the box top and the label text
-LABEL_BOX_COLOR = (0, 0, 0)         # black box keeps the label readable over any render
-LABEL_TEXT_COLOR = (255, 255, 255)
-FONT_FILE = "arial.ttf"             # falls back to Pillow's built-in bitmap font if missing
+LABEL_FONT_SIZE = 26                # label text, at scale 1: the label is what changes while flipping
+MIN_LABEL_FONT_SIZE = 12            # a long label shrinks down to this before it is shortened
+BAND_PAD_X = 16                     # left and right margin inside the band
+BAND_PAD_Y = 10                     # margin above the title and below the label box
+ROW_GAP = 8                         # space between the title row and the label box
+LABEL_PAD_X = 10                    # space between the label box edges and its text, left and right
+LABEL_PAD_Y = 5                     # space between the label box edges and its text, top and bottom
+LABEL_BOX_COLOR = (235, 235, 235)   # light box, dark text: stands out from the title on the band
+LABEL_TEXT_COLOR = (0, 0, 0)
+FONT_FILES = ("arial.ttf", "Arial.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf",
+              "Helvetica.ttc")      # first one found; else Pillow's built-in font
+
+
+_FONT_CACHE = {}
+
+
+def font(size):
+    """A TrueType font of size px (cached), falling back to Pillow's built-in font."""
+    size = max(1, int(round(size)))
+    if size not in _FONT_CACHE:
+        f = None
+        for name in FONT_FILES:
+            try:
+                f = ImageFont.truetype(name, size)
+                break
+            except OSError:
+                continue
+        if f is None:
+            try:
+                f = ImageFont.load_default(size=size)     # scalable since Pillow 10.1
+            except TypeError:
+                f = ImageFont.load_default()
+        _FONT_CACHE[size] = f
+    return _FONT_CACHE[size]
 
 
 def _fonts():
-    try:
-        return (ImageFont.truetype(FONT_FILE, TITLE_FONT_SIZE),
-                ImageFont.truetype(FONT_FILE, LABEL_FONT_SIZE))
-    except OSError:
-        f = ImageFont.load_default()
-        return f, f
+    """(title font, label font) at scale 1."""
+    return font(TITLE_FONT_SIZE), font(LABEL_FONT_SIZE)
+
+
+def frame_scale(size):
+    """How much the band, fonts and label box grow for an image of size (w, h): 1 up to
+    REF_VIEW, then the larger of w / REF_VIEW[0] and h / REF_VIEW[1]."""
+    w, h = size
+    return max(1.0, w / REF_VIEW[0], h / REF_VIEW[1])
+
+
+def frame_layout(size):
+    """Band height, fonts and positions for the frame of an image of size (w, h)."""
+    s = frame_scale(size)
+    title_px = round(TITLE_FONT_SIZE * s)
+    label_px = round(LABEL_FONT_SIZE * s)
+    pad_x, pad_y, gap = round(BAND_PAD_X * s), round(BAND_PAD_Y * s), round(ROW_GAP * s)
+    title_h = round(title_px * 1.2)                   # line height: room for descenders
+    box_h = round(label_px * 1.2) + 2 * round(LABEL_PAD_Y * s)
+    label_top = pad_y + title_h + gap
+    return {"scale": s, "band": label_top + box_h + pad_y,
+            "title_font": font(title_px), "label_font": font(label_px),
+            "title_pos": (pad_x, pad_y), "title_room": max(1, size[0] - 2 * pad_x),
+            "label_left": pad_x, "label_top": label_top, "label_box_h": box_h,
+            "label_pad": (round(LABEL_PAD_X * s), round(LABEL_PAD_Y * s)),
+            "label_px": label_px}
+
+
+def band_height(size):
+    """Height of the title band above an image of size (w, h)."""
+    return frame_layout(size)["band"]
+
+
+def fit_text(text, width, fnt, keep="end"):
+    """text shortened with '...' so it fits width pixels at fnt; keep='end' drops characters
+    from the start (paths: the file name stays), keep='start' from the end."""
+    d = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    if d.textlength(text, font=fnt) <= width:
+        return text
+    while text and d.textlength("..." + text if keep == "end" else text + "...", font=fnt) > width:
+        text = text[1:] if keep == "end" else text[:-1]
+    return "..." + text if keep == "end" else text + "..."
 
 
 def _runs(mask):
@@ -147,28 +214,36 @@ def split(sheets, out):
     return paths
 
 
-def labelled_frame(im, title_text, text, fonts=None):
-    """One RGB frame: a title band with title_text above im, and a label box with text in
-    the image's top-left corner. Shared by 'label' and the other frame writers
-    (compare_dirs.py, review_set.py) so every frame in a review looks the same."""
-    font, small = fonts or _fonts()
+def labelled_frame(im, title_text, text, layout=None):
+    """One RGB frame: a title band above im holding title_text and, under it, a label box
+    with text; nothing is drawn over the image. Sizes follow frame_layout(im.size). A title
+    or label too long for the width is shortened with '...'. Shared by 'label' and the other
+    frame writers (compare_dirs.py, review_set.py) so every frame in a review looks the same."""
     im = im.convert("RGB")
-    box_top = TITLE_BAND_H + LABEL_BOX_TOP
-    text_pos = (LABEL_BOX_LEFT + LABEL_PAD_X, box_top + LABEL_PAD_Y)
-    frame = Image.new("RGB", (im.width, im.height + TITLE_BAND_H), BG)
+    lay = layout if isinstance(layout, dict) else frame_layout(im.size)
+    band = lay["band"]
+    frame = Image.new("RGB", (im.width, im.height + band), BG)
+    frame.paste(im, (0, band))
     d = ImageDraw.Draw(frame)
-    d.text(TITLE_TEXT_POS, title_text, fill=TITLE_TEXT_COLOR, font=font)
-    frame.paste(im, (0, TITLE_BAND_H))
-    tw = d.textbbox(text_pos, text, font=small)[2]
-    d.rectangle([LABEL_BOX_LEFT, box_top, tw + LABEL_PAD_X, box_top + LABEL_BOX_H],
-                fill=LABEL_BOX_COLOR)
-    d.text(text_pos, text, fill=LABEL_TEXT_COLOR, font=small)
+    d.text(lay["title_pos"], fit_text(title_text, lay["title_room"], lay["title_font"]),
+           fill=TITLE_TEXT_COLOR, font=lay["title_font"])
+    px, py = lay["label_pad"]
+    room = lay["title_room"] - 2 * px
+    size, fnt = lay["label_px"], lay["label_font"]
+    while size > MIN_LABEL_FONT_SIZE and d.textlength(text, font=fnt) > room:
+        size -= 1
+        fnt = font(size)
+    text = fit_text(text, room, fnt, keep="start")
+    left, top, box_h = lay["label_left"], lay["label_top"], lay["label_box_h"]
+    tw = d.textlength(text, font=fnt)
+    d.rectangle([left, top, left + tw + 2 * px, top + box_h - 1], fill=LABEL_BOX_COLOR)
+    asc, desc = fnt.getmetrics() if hasattr(fnt, "getmetrics") else (size, 0)
+    d.text((left + px, top + (box_h - asc - desc) / 2), text, fill=LABEL_TEXT_COLOR, font=fnt)
     return frame
 
 
 def label(title_text, items, out):
     out = Path(os.path.abspath(out))
-    fonts = _fonts()
     out.mkdir(parents=True, exist_ok=True)
     paths, size = [], None
     for i, (img, text) in enumerate(items, 1):
@@ -177,7 +252,7 @@ def label(title_text, items, out):
             sys.exit(f"{img}: size {im.size} differs from {size}; frames would not line up "
                      "(re-render or resize so every image has the same size)")
         size = im.size
-        frame = labelled_frame(im, title_text, text, fonts)
+        frame = labelled_frame(im, title_text, text)
         p = out / f"{Path(img).stem}__{_safe(text)}__{i}.png"
         frame.save(p)
         paths.append(p)

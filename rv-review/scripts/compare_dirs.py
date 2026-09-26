@@ -6,11 +6,12 @@ write labelled frames of every changed pair for review in RV.
     compare_dirs.py --adapter playwright ROOT --out DIR    a test tool's output folder
 
 For every pair it measures the difference (on 8-bit RGBA, colour premultiplied by alpha so
-invisible pixels do not count):
+invisible pixels do not count; when both sides are 16-bit or float greyscale, on every level
+of the originals, measured_depth "full"; 16-bit colour PNG / TIFF is read as 8 bits):
     mean_abs          mean absolute difference over all pixels and channels, 0-1
     max_abs           largest single-channel difference, 0-1
     changed_fraction  share of pixels whose largest channel difference is above --threshold
-                      (8-bit levels, default 0: any difference counts)
+                      (8-bit levels, fractions allowed, default 0: any difference counts)
     bbox              [x0, y0, x1, y1] around the changed pixels
 and sorts pairs as added / removed / identical / within tolerance / changed. Identical and
 within-tolerance pairs are left out of the frames unless --all is given; changed pairs come
@@ -354,6 +355,25 @@ def load_rgba(path):
         return np.asarray(im.convert("RGBA")).copy()
 
 
+def load_rgba_fine(path):
+    """float32 RGBA on the 0-255 scale keeping every level of a 16-bit or float greyscale
+    image (I;16, I, F), or None for images Pillow reads as 8 bits (including 16-bit colour
+    PNG / TIFF, which Pillow reduces to 8 bits when it opens them)."""
+    with Image.open(path) as im:
+        if im.mode not in ("I;16", "I;16B", "I;16L", "I", "F"):
+            return None
+        im.load()
+        a = np.asarray(im).astype(np.float64)
+        if im.mode == "F":
+            a = a * 255.0
+        elif im.mode.startswith("I;16") or a.max() > 255:
+            a = a / 257.0
+        else:
+            return None                          # 32-bit I holding 8-bit data: nothing finer
+        a = np.clip(a, 0, 255).astype(np.float32)
+        return np.dstack([a, a, a, np.full_like(a, 255.0)])
+
+
 def checker(h, w, colors=PAD_COLORS, size=PAD_CHECK):
     yy, xx = np.mgrid[0:h, 0:w]
     m = ((yy // size + xx // size) % 2).astype(bool)
@@ -367,7 +387,7 @@ def pad_to(a, size, anchor="top-left"):
     """(padded RGBA array, valid mask) at size (w, h); padding is transparent and invalid."""
     w, h = size
     ah, aw = a.shape[:2]
-    out = np.zeros((h, w, 4), np.uint8)
+    out = np.zeros((h, w, 4), a.dtype)
     valid = np.zeros((h, w), bool)
     x0, y0 = ((w - aw) // 2, (h - ah) // 2) if anchor == "center" else (0, 0)
     out[y0:y0 + ah, x0:x0 + aw] = a
@@ -446,26 +466,24 @@ def placeholder(size, text):
     w, h = size
     im = Image.fromarray(checker(h, w))
     d = ImageDraw.Draw(im)
-    _, small = sp._fonts()
+    px = sp.LABEL_FONT_SIZE * sp.frame_scale(size)
+    small = sp.font(px)
+    text = sp.fit_text(text, max(1, w - 8), small, keep="start")
     tw = d.textlength(text, font=small)
-    d.text(((w - tw) / 2, h / 2 - 10), text, fill=(220, 220, 220), font=small)
+    d.text(((w - tw) / 2, (h - px) / 2), text, fill=(220, 220, 220), font=small)
     return im
 
 
 def fit_text(text, width, font):
     """text shortened from the left with '...' so it fits width pixels at font."""
-    d = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    if d.textlength(text, font=font) <= width:
-        return text
-    while text and d.textlength("..." + text, font=font) > width:
-        text = text[1:]
-    return "..." + text
+    return sp.fit_text(text, width, font)
 
 
-def title_text(name, info, width, font):
-    """Title band text: the name shortened from the left first, so the status stays readable."""
+def title_text(name, info, layout):
+    """Title band text for a frame laid out by sp.frame_layout(): the name shortened from
+    the left first, so the status stays readable."""
     d = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    room = width - 2 * sp.TITLE_TEXT_POS[0]
+    room, font = layout["title_room"], layout["title_font"]
     if d.textlength(name + info, font=font) <= room:
         return name + info
     if d.textlength("..." + name[-6:] + info, font=font) <= room:
@@ -547,7 +565,16 @@ def compare_pair(pair, threshold=0, min_changed=0.0, resize=None, anchor="top-le
     size = (max(a.shape[1], b.shape[1]), max(a.shape[0], b.shape[0]))
     a, va = pad_to(a, size, anchor)
     b, vb = pad_to(b, size, anchor)
-    m, mag = metrics(a, b, va, vb, threshold)
+    # both sides 16-bit / float greyscale: measure every level, not the 8-bit frames
+    fine = None if r.get("resized") else \
+        (load_rgba_fine(paths["baseline"]), load_rgba_fine(paths["candidate"]))
+    if fine and fine[0] is not None and fine[1] is not None:
+        m, mag = metrics(pad_to(fine[0], size, anchor)[0], pad_to(fine[1], size, anchor)[0],
+                         va, vb, threshold)
+        r["measured_depth"] = "full"
+    else:
+        m, mag = metrics(a, b, va, vb, threshold)
+        r["measured_depth"] = "8-bit"
     r.update(m)
     if same_bytes or (m["changed_pixels"] == 0 and m["max_abs"] == 0 and not r["size_mismatch"]):
         r["status"] = "identical"
@@ -577,7 +604,6 @@ def write_frames(results, out, labels=("baseline", "candidate"), title="", gain=
     """Labelled frames per pair and the manifest dict (frames.json)."""
     out = Path(os.path.abspath(out))
     out.mkdir(parents=True, exist_ok=True)
-    fonts = sp._fonts()
     frames, views, groups, items = [], [], [], []
     size = [0, 0]
     n = 0
@@ -626,9 +652,9 @@ def write_frames(results, out, labels=("baseline", "candidate"), title="", gain=
         r["frames"] = {}
         for lab, im, role in pair_frames:
             n += 1
-            text = title_text(f"{head}{r['key']}", f"  ({title_info})" if title_info else "",
-                              im.width, fonts[0])
-            frame = sp.labelled_frame(im, text, lab, fonts)
+            lay = sp.frame_layout(im.size)
+            text = title_text(f"{head}{r['key']}", f"  ({title_info})" if title_info else "", lay)
+            frame = sp.labelled_frame(im, text, lab, lay)
             path = out / f"{safe_name(strip_ext(r['key']))}__{safe_name(role)}__{n}.png"
             frame.save(path)
             frames.append(str(path))

@@ -35,16 +35,20 @@ Start-Process -FilePath "$rvbin\rv.exe" -ArgumentList '-network','-networkTag','
 ```
 
 Every `rv` launch opens a new window; reuse one only through rvpush. Wait until RV answers
-before pushing: `rvpush -tag rv-review py-eval-return "len(rv.commands.sources())"` prints a
-number greater than 0 once the sources are in.
+before pushing: `RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review py-eval-return
+"len(rv.commands.sources())"` prints a number greater than 0 once the sources are in.
+
+Every rvpush command on this page sets `RVPUSH_RV_EXECUTABLE_PATH=none`: plain rvpush starts
+a new RV of its own when no RV answers the tag (exit 15, and that RV is tied to the calling
+shell). With `none` it exits 11 instead. In PowerShell set it once per session with
+`$env:RVPUSH_RV_EXECUTABLE_PATH = 'none'` and drop the prefix.
 
 ## Replace or add media
 
 ```bash
-export RVPUSH_RV_EXECUTABLE_PATH=none      # never let rvpush start an RV of its own
-rvpush -tag rv-review set   before.png after.png v2.png      # replace everything
-rvpush -tag rv-review merge extra.png                        # append
-rvpush -tag rv-review set [ left.exr right.exr ] [ shot.mov -in 101 -out 120 ]
+RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review set   before.png after.png v2.png      # replace everything
+RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review merge extra.png                        # append
+RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review set [ left.exr right.exr ] [ shot.mov -in 101 -out 120 ]
 ```
 
 - `-tag` must be the first argument.
@@ -62,7 +66,7 @@ Its globals and locals are separate: comprehensions cannot see local names or im
 spell out `rv.commands.` and inline the lists.
 
 ```bash
-rvpush -tag rv-review py-exec "rv.commands.setViewNode('defaultSequence'); rv.commands.stop(); rv.commands.setFPS(1.0); rv.commands.setFrame(rv.commands.frameStart()); [rv.commands.markFrame(f, True) for f in [1,4]]"
+RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review py-exec "rv.commands.setViewNode('defaultSequence'); rv.commands.stop(); rv.commands.setFPS(1.0); rv.commands.setFrame(rv.commands.frameStart()); [rv.commands.markFrame(f, True) for f in [1,4]]"
 ```
 
 In PowerShell 5.1 keep the Python in double quotes and use only single quotes inside it.
@@ -70,7 +74,7 @@ In PowerShell 5.1 keep the Python in double quotes and use only single quotes in
 ## Read the state back
 
 ```bash
-rvpush -tag rv-review py-eval-return "(rv.commands.frame(), rv.commands.frameStart(), rv.commands.frameEnd(), rv.commands.markedFrames(), rv.commands.getIntProperty('defaultSequence_sequence.edl.frame'), len(rv.commands.nodesOfType('RVFileSource')), rv.commands.viewNode(), rv.commands.getStringProperty('@RVDisplayStereo.stereo.type'), rv.commands.fps())"
+RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review py-eval-return "(rv.commands.frame(), rv.commands.frameStart(), rv.commands.frameEnd(), rv.commands.markedFrames(), rv.commands.getIntProperty('defaultSequence_sequence.edl.frame'), len(rv.commands.nodesOfType('RVFileSource')), rv.commands.viewNode(), rv.commands.getStringProperty('@RVDisplayStereo.stereo.type'), rv.commands.fps())"
 ```
 
 Compare with what was loaded: `frameEnd - frameStart + 1` frames, one `RVFileSource` per
@@ -81,7 +85,7 @@ For a stack (wipe, difference, over, replace) also read its composite, whether t
 is on, and the visible box of the top source (next section):
 
 ```bash
-rvpush -tag rv-review py-eval-return "(rv.commands.getStringProperty('defaultStack_stack.composite.type'), rv.runtime.eval('rvui.wipeShown()', ['rvui']), rv.commands.getFloatProperty('defaultStack_t_' + rv.commands.nodeConnections('defaultStack', False)[0][0] + '.stencil.visibleBox'))"
+RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review py-eval-return "(rv.commands.getStringProperty('defaultStack_stack.composite.type'), rv.runtime.eval('rvui.wipeShown()', ['rvui']), rv.commands.getFloatProperty('defaultStack_t_' + rv.commands.nodeConnections('defaultStack', False)[0][0] + '.stencil.visibleBox'))"
 ```
 
 `(['over'], '2', [0.0, 0.5, 0.0, 1.0])` is a wipe split down the middle. `wipeShown()` returns
@@ -119,7 +123,7 @@ same property while dragging. Show the first source on the left half and the sec
 right:
 
 ```bash
-rvpush -tag rv-review py-exec "rv.commands.setFloatProperty('defaultStack_t_' + rv.commands.nodeConnections('defaultStack', False)[0][0] + '.stencil.visibleBox', [0.0, 0.5, 0.0, 1.0], True)"
+RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review py-exec "rv.commands.setFloatProperty('defaultStack_t_' + rv.commands.nodeConnections('defaultStack', False)[0][0] + '.stencil.visibleBox', [0.0, 0.5, 0.0, 1.0], True)"
 ```
 
 `[0.0, 1.0, 0.0, 1.0]` is the whole image again (also Wipes > Reset All Wipes). A saved `.rv`
@@ -137,9 +141,9 @@ back to the frame it started on. The window needs two or more frames (a sequence
 two stills is one frame). By hand:
 
 ```bash
-rvpush -tag rv-review py-eval-return "[b for b in rv.commands.bindings() if b[0] in ['key-down--right', 'key-down--left', 'key-down--alt--right', 'key-down--alt--left']]"
-rvpush -tag rv-review py-exec "rv.commands.sendInternalEvent('key-down--right', '', '')"
-rvpush -tag rv-review py-eval-return "rv.commands.frame()"
+RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review py-eval-return "[b for b in rv.commands.bindings() if b[0] in ['key-down--right', 'key-down--left', 'key-down--alt--right', 'key-down--alt--left']]"
+RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review py-exec "rv.commands.sendInternalEvent('key-down--right', '', '')"
+RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review py-eval-return "rv.commands.frame()"
 ```
 
 | Key | Event | RV's action (`rvui.mu`, `extra_commands.mu`) |

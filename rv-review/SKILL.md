@@ -4,7 +4,7 @@ description: Loads images and media into RV / OpenRV for review, dailies and app
 license: MIT
 compatibility: Needs a local desktop session with RV or OpenRV (rv and rvpush) and Python 3.9 or later; the image scripts also need numpy and Pillow. Optional, detected, never installed - Playwright or Chrome / Edge (web capture, SVG), resvg / CairoSVG / Inkscape (SVG), Xcode simctl or adb (mobile capture). Works on Windows, macOS and Linux.
 metadata:
-  version: 0.2.1
+  version: 0.2.2
 ---
 
 # Review media in RV
@@ -17,7 +17,8 @@ review instead of opening another one.
 
 - **Panels, not sheets.** Each version of a view is its own frame, so stepping frames flips
   versions on the same camera or screen. Do not tile them and do not load whole sheets.
-- **Labels on every frame**: a title band and a label box, as `sheet_panels.py` draws them.
+- **Labels on every frame**: a title band above the image with the title and a label box,
+  sized to the frame, as `sheet_panels.py` draws them; nothing covers the image.
 - **One session, back to back**, with a timeline mark at the first frame of every view, pair
   or screen (or of every source, for movies and sequences): Alt+Left / Alt+Right jumps.
 - **Same size** within a view: frames are padded so nothing shifts while flipping.
@@ -35,7 +36,7 @@ box. Every script prints one JSON line.
 | `scripts/rasterize.py SVG ... --out DIR` | SVG to PNG with the first renderer found (RV cannot read SVG) |
 | `scripts/web_capture.py PAGE ... --out DIR` | web pages or local HTML at named breakpoints (Playwright, else Chrome / Edge) |
 | `scripts/app_capture.py ios\|android\|electron` | the current app screen in several appearances, text sizes, display sizes |
-| `scripts/rv_review.py` | loads sources, a `--manifest` / `--frames-json`, or a `.rv` into the review window (tag `rv-review`), sets layout, stereo, views and marks, reads the state and RV's log back; `--selftest` checks the frame keys. Exit 0 verified, 1 error, 2 bad arguments, 3 loaded but differs or RV logged errors |
+| `scripts/rv_review.py` | loads sources, a `--manifest` / `--frames-json`, or a `.rv` into the review window (tag `rv-review`), sets layout, stereo, views and marks, reads the state and RV's log back; `--selftest` checks the frame keys. Exit 0 verified, 1 error, 2 bad arguments, 3 loaded but differs, a source did not decode or RV logged errors |
 | `scripts/rv_session.py write\|check\|render` | writes, checks (gtoinfo) and renders (rvio) `.rv` sessions |
 
 RV is found through `--rv-bin`, `RV_BIN`, `RVPUSH_RV_EXECUTABLE_PATH`, `RV_PATH`, `RV_APP_RV`,
@@ -114,6 +115,10 @@ Then the keys:
   RV's own view, run it in both orders (`difference`, `difference-inverted`).
 - **rvpush exits 0 even when the Python inside fails**, and RV loads a broken file as a
   placeholder. Only the read-back plus a clean log proves a load.
+- **A truncated or corrupt still shows "error reading" in the viewer, and RV logs nothing.**
+  The script therefore decodes every still and the first frame of every sequence before the
+  load; failures still load (so the rest can be reviewed) but are listed in `errors`, exit 3.
+  `--no-decode-check` skips it.
 - **rvpush needs the tag and must never start RV.** RV runs with `-network -networkTag <tag>`
   and every push uses `-tag <tag>` first; with `RVPUSH_RV_EXECUTABLE_PATH=none` rvpush exits 11
   when no RV has the tag. The script launches RV detached and sends its output to
@@ -121,6 +126,10 @@ Then the keys:
 - **rvpush finds RV through port files in the temp folder**, so caller and RV must share
   TEMP / TMPDIR. A sandboxed shell with its own temp folder cannot reach the window.
 - **Each `rv` launch opens a new window.** Reuse one only through the script or rvpush.
+- **macOS: a covered RV window may not repaint**, and a refresh through rvpush does not
+  bring RV forward. The script raises the window after each refresh, but macOS can keep
+  another app in front; tell the user to click the RV window. The read-back is correct
+  either way.
 - **Check a generated or edited `.rv` before opening it** (`rv_session.py check`): a GTO
   syntax error opens an error console. Node names: two or more `[A-Za-z0-9_]` characters.
 - **In `py-exec`, comprehensions cannot see local names or imports:** spell out
