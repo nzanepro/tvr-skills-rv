@@ -1,0 +1,52 @@
+name: Feature request
+description: Suggest a new recipe, reference, or capability for rv-review, rvio, rvls or rvpkg.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository is scoped to RV / OpenRV media review and its command-line tools
+        (rv, rvpush, rvio, rvls, rvpkg). A request for an unrelated tool is probably better
+        as its own project; feel free to ask first if you are not sure.
+
+  - type: dropdown
+    id: skill
+    attributes:
+      label: Which skill does this affect
+      options:
+        - rv-review
+        - rvio
+        - rvls
+        - rvpkg
+        - A new skill in this repo's scope
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve
+      description: What are you trying to do that the skill cannot do today, or does clumsily?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should happen instead. A concrete example command or prompt helps.
+    validations:
+      required: true
+
+  - type: input
+    id: rv-version
+    attributes:
+      label: RV / OpenRV version tested, if relevant
+      placeholder: e.g. OpenRV 3.1.0
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

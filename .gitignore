@@ -12,3 +12,6 @@ rv_frames/
 
 # packaged skills
 *.skill
+
+# local list of private words for scripts/check_repo.py (never commit)
+.private-words

@@ -1,0 +1,108 @@
+name: Bug report
+description: Something in rv-review, rvio, rvls or rvpkg behaved incorrectly, or a skill did not trigger when it should have.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please use **synthetic or neutral file names and paths**
+        (for example `shot010`, `C:\work\renders\...`) rather than anything from a real
+        project, and strip personal paths, usernames or machine names from any pasted
+        output. See [CONTRIBUTING.md](../../CONTRIBUTING.md#privacy-rules-for-anything-you-contribute).
+
+  - type: dropdown
+    id: skill
+    attributes:
+      label: Which skill
+      options:
+        - rv-review
+        - rvio
+        - rvls
+        - rvpkg
+        - "Not sure / more than one"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of issue
+      options:
+        - Wrong or unexpected behavior (a script ran but did the wrong thing)
+        - Script errored or crashed
+        - The skill did not trigger when it should have
+        - The wrong skill triggered
+        - Documentation is wrong or unclear
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: e.g. Windows 11, macOS 14 Sonoma, Ubuntu 24.04
+    validations:
+      required: true
+
+  - type: input
+    id: rv-version
+    attributes:
+      label: RV / OpenRV version and build
+      description: Output of `rv -help` (first lines) or `rvpush -help`, or the version shown in RV's About box. Say "not installed" if you are only reporting a launcher/finder issue.
+      placeholder: e.g. OpenRV 3.1.0, or "Autodesk RV 2024.x.x"
+    validations:
+      required: true
+
+  - type: input
+    id: client
+    attributes:
+      label: Claude / Agent Skills client and how the skill is installed
+      description: Only needed for "did not trigger" / "wrong skill triggered" reports.
+      placeholder: e.g. Claude Code, plugin marketplace install; or claude.ai, uploaded skill zip
+
+  - type: textarea
+    id: prompt
+    attributes:
+      label: Exact prompt used
+      description: Only needed for "did not trigger" / "wrong skill triggered" reports. Paste the prompt exactly as typed.
+      render: text
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Command run
+      description: The exact command line (script name and arguments). Replace real file paths with neutral placeholders if needed.
+      render: console
+      placeholder: |
+        python rv-review/scripts/rv_review.py --frames-json rv_frames/frames.json
+
+  - type: textarea
+    id: json-output
+    attributes:
+      label: JSON output
+      description: The one-line JSON result the script printed (or the error message and exit code if it did not print JSON).
+      render: json
+
+  - type: textarea
+    id: rv-log
+    attributes:
+      label: RV log excerpt
+      description: >-
+        Relevant lines from RV's own log/console (Window > Console in RV, or the terminal RV
+        was started from), if the issue involves RV itself rather than just the launcher script.
+        Only the relevant lines, not the whole log.
+      render: text
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Other skills installed, anything unusual about the setup, etc.

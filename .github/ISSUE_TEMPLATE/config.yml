@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and general discussion
+    url: https://github.com/nzanepro/tvr-skills-rv/discussions
+    about: Ask how to use a skill, share a review workflow, or discuss an idea before it is a formal feature request. Use the issue forms above for bugs and specific feature requests.
+  - name: Report a security issue privately
+    url: https://github.com/nzanepro/tvr-skills-rv/security/advisories/new
+    about: Please do not open a public issue for a security concern. See SECURITY.md.
