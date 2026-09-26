@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# pytest
+.pytest_cache/
+
+# rv-review output frames
+rv_frames/
