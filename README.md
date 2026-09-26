@@ -103,6 +103,8 @@ but they point at support and preference folders, not at the executable.
 /plugin install rv@tvr-skills-rv
 ```
 
+Free and MIT-licensed. If it saves you time, you can [buy me a coffee](https://buymeacoffee.com/trespassvr).
+
 Update later with `/plugin marketplace update tvr-skills-rv`. Plugin skills are namespaced, so
 the skill is `/rv:rv-review`.
 
