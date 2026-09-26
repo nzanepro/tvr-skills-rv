@@ -158,7 +158,7 @@ def page_url(page):
     p = Path(page)
     if not p.is_file():
         raise CaptureError(f"not a URL and not a file: {page}")
-    return "file:" + pathname2url(str(p.resolve())), True
+    return "file:" + pathname2url(str(Path(os.path.abspath(p)))), True
 
 
 def page_name(page):
@@ -206,7 +206,7 @@ def plan(pages, out, version="capture", breakpoints=DEFAULT_BREAKPOINTS, browser
                 rel = Path(folder) / bp / f"{name}.png" if group_by == "breakpoint"                     else Path(folder) / f"{name}__{bp}.png"
                 jobs.append({"page": page, "url": url, "local": local, "name": name,
                              "breakpoint": bp, "width": w, "height": h or height,
-                             "browser": browser, "out": str(Path(out).resolve() / rel)})
+                             "browser": browser, "out": str(Path(os.path.abspath(out)) / rel)})
     return jobs
 
 
@@ -235,7 +235,7 @@ def run_chrome_cli(jobs, opts, chrome=None):
     with tempfile.TemporaryDirectory(prefix="rv-review-chrome-") as profile:
         for j in jobs:
             Path(j["out"]).parent.mkdir(parents=True, exist_ok=True)
-            cmd = chrome_args(chrome, j["url"], str(Path(j["out"]).resolve()), j["width"],
+            cmd = chrome_args(chrome, j["url"], str(Path(os.path.abspath(j["out"]))), j["width"],
                               j["height"], opts.get("scale", 1.0), profile,
                               opts.get("color_scheme"), opts.get("transparent", False))
             try:
@@ -458,7 +458,7 @@ def main(argv=None):
         print(f"web_capture: {e}", file=sys.stderr)
         print(json.dumps({"ok": False, "error": str(e)}))
         return 2
-    print(json.dumps({"ok": not failed, "backend": backend, "root": str(Path(a.out).resolve()),
+    print(json.dumps({"ok": not failed, "backend": backend, "root": str(Path(os.path.abspath(a.out))),
                       "version": a.version, "files": done, "failed": failed, "notes": notes}))
     return 0 if not failed else 1
 

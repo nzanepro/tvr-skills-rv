@@ -53,7 +53,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(os.path.abspath(__file__)).parent))
 import sheet_panels as sp  # noqa: E402
 
 REPORT_SCHEMA = "rv-review.compare"
@@ -575,7 +575,7 @@ def write_frames(results, out, labels=("baseline", "candidate"), title="", gain=
                  context=DEFAULT_CONTEXT, mode="abs", threshold=0, overlay=False, tool_diff=False,
                  with_diff=True, include=("changed", "added", "removed")):
     """Labelled frames per pair and the manifest dict (frames.json)."""
-    out = Path(out).resolve()
+    out = Path(os.path.abspath(out))
     out.mkdir(parents=True, exist_ok=True)
     fonts = sp._fonts()
     frames, views, groups, items = [], [], [], []
@@ -663,7 +663,7 @@ def report_markdown(report):
 
 
 def run(args):
-    out = Path(args.out).resolve()
+    out = Path(os.path.abspath(args.out))
     svg_opts = {"scale": args.svg_scale, "background": args.svg_background, "backend": args.svg_backend}
     exts = tuple("." + e.strip(".").lower() for e in args.ext.split(",")) if args.ext else IMAGE_EXTS
     if args.adapter == "dirs":
@@ -676,12 +676,12 @@ def run(args):
                 raise CompareError(f"not found: {p}")
         if base.is_file() and cand.is_file():
             pairs = [{"key": base.stem if base.stem == cand.stem else f"{base.stem} vs {cand.stem}",
-                      "baseline": str(base.resolve()), "candidate": str(cand.resolve())}]
+                      "baseline": str(Path(os.path.abspath(base))), "candidate": str(Path(os.path.abspath(cand)))}]
         elif base.is_dir() and cand.is_dir():
             pairs = pair_dirs(base, cand, exts, args.include, args.exclude, args.match)
         else:
             raise CompareError("BASELINE and CANDIDATE must both be folders or both be files")
-        base_s, cand_s = str(base.resolve()), str(cand.resolve())
+        base_s, cand_s = str(Path(os.path.abspath(base))), str(Path(os.path.abspath(cand)))
     else:
         if len(args.paths) != 1:
             raise CompareError(f"--adapter {args.adapter} takes one folder: the project or the "
@@ -696,7 +696,7 @@ def run(args):
             pairs = [p for p in pairs if any(fnmatch.fnmatch(p["key"], g) for g in args.include)]
         if args.exclude:
             pairs = [p for p in pairs if not any(fnmatch.fnmatch(p["key"], g) for g in args.exclude)]
-        base_s = cand_s = str(root.resolve())
+        base_s = cand_s = str(Path(os.path.abspath(root)))
     if not pairs:
         raise CompareError("no images found to compare; check the folders and --ext / --include")
     labels = tuple(x.strip() for x in args.labels.split(",")) if args.labels else ("baseline", "candidate")

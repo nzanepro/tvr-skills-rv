@@ -223,3 +223,18 @@ def test_checker_accepts_39_forms(src):
 def test_checker_rejects_310_syntax(src):
     with pytest.raises(SyntaxError):
         py39_problems(src)
+
+
+def test_no_path_resolve_in_skill_scripts():
+    """On Windows, Python 3.9's Path.resolve() returns a relative path for a path that does
+    not exist yet (fixed in 3.10), so outputs resolved before they are created stay
+    relative. Use os.path.abspath in skill scripts instead."""
+    from pathlib import Path as _P
+    root = _P(__file__).resolve().parent.parent
+    offenders = []
+    for skill in ("rv-review", "rvio", "rvls", "rvpkg"):
+        for f in (root / skill / "scripts").glob("*.py"):
+            for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+                if ".resolve()" in line and "__file__" not in line:
+                    offenders.append(f"{skill}/scripts/{f.name}:{n}")
+    assert not offenders, offenders

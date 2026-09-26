@@ -406,7 +406,7 @@ def main(argv=None):
         print(json.dumps({"ok": False, "error": str(e)}))
         return 1
     print(json.dumps({"ok": True, "dry_run": a.dry_run, "platform": a.platform,
-                      "root": str(Path(a.out).resolve()), "files": files, "commands": log}))
+                      "root": str(Path(os.path.abspath(a.out))), "files": files, "commands": log}))
     return 0
 
 

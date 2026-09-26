@@ -42,7 +42,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(os.path.abspath(__file__)).parent))
 import review_manifest as rm  # noqa: E402
 
 GTO_VERSION = 4
@@ -557,11 +557,11 @@ def main(argv=None):
             m = rm.load(a.manifest)
             p = write(m, a.out, a.marks, a.fps, a.layout)
             probs = structural_problems(p.read_text(encoding="utf-8"))
-            result.update(session=str(p.resolve()), items=len(m["items"]), problems=probs,
+            result.update(session=str(Path(os.path.abspath(p))), items=len(m["items"]), problems=probs,
                           ok=not probs)
         elif a.cmd == "check":
             probs, checker = check(a.session, a.rv_bin)
-            result.update(session=str(Path(a.session).resolve()), checker=checker,
+            result.update(session=str(Path(os.path.abspath(a.session))), checker=checker,
                           problems=probs, ok=not probs)
         else:
             probs, _ = check(a.session, a.rv_bin)
@@ -572,12 +572,12 @@ def main(argv=None):
                 if not rvio:
                     raise RuntimeError("rvio not found next to rv; pass --rv-bin <RV bin folder>")
                 Path(a.out).parent.mkdir(parents=True, exist_ok=True)
-                cmd = render_args(rvio, Path(a.session).resolve(), a.out, extra)
+                cmd = render_args(rvio, Path(os.path.abspath(a.session)), a.out, extra)
                 r = subprocess.run(cmd, capture_output=True, text=True)
                 errs = [ln for ln in (r.stdout + r.stderr).splitlines()
                         if ln.startswith(("ERROR", "Error"))]
                 result.update(command=cmd, exit=r.returncode, problems=errs,
-                              ok=r.returncode == 0 and not errs, out=str(Path(a.out).resolve()))
+                              ok=r.returncode == 0 and not errs, out=str(Path(os.path.abspath(a.out))))
     except rm.ManifestError as e:
         result["problems"] = e.problems
     except (OSError, ValueError, RuntimeError) as e:

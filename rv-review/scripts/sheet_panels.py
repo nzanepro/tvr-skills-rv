@@ -35,6 +35,7 @@ label  --title TEXT --out DIR IMAGE=LABEL [IMAGE=LABEL ...]
 Exit status is 0 on success; problems (not a stacked sheet, mismatched sizes) exit
 non-zero with a message on stderr.
 """
+import os
 import argparse
 import json
 import re
@@ -123,8 +124,8 @@ def panels_of(sheet):
 
 
 def split(sheets, out):
-    out = Path(out).resolve()
-    sheets = [Path(x).resolve() for x in sheets]
+    out = Path(os.path.abspath(out))
+    sheets = [Path(os.path.abspath(x)) for x in sheets]
     views = [(Path(s), *panels_of(s)) for s in sheets]
     W = max(f.width for _, fr, _ in views for _, f in fr)
     H = max(f.height for _, fr, _ in views for _, f in fr)
@@ -166,7 +167,7 @@ def labelled_frame(im, title_text, text, fonts=None):
 
 
 def label(title_text, items, out):
-    out = Path(out).resolve()
+    out = Path(os.path.abspath(out))
     fonts = _fonts()
     out.mkdir(parents=True, exist_ok=True)
     paths, size = [], None

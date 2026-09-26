@@ -69,7 +69,7 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(os.path.abspath(__file__)).parent))
 import review_manifest as rm  # noqa: E402  (same folder; standard library only)
 import rv_session  # noqa: E402
 
@@ -333,12 +333,12 @@ def resolve_token(token, cwd=None):
         if not p.parent.is_dir():
             raise RvError(f"folder of sequence {token} not found. Check the path; list what a "
                           f"folder holds with 'rvls <folder>'.")
-        return str(p.parent.resolve() / p.name)
+        return str(Path(os.path.abspath(p.parent)) / p.name)
     if not p.is_file():
         raise RvError(f"source not found: {token}. Check the path (relative paths resolve from "
                       f"the current folder); for an image sequence use RV notation such as "
                       f"name.#.exr or name.1001-1100#.exr.")
-    return str(p.resolve())
+    return str(Path(os.path.abspath(p)))
 
 
 def resolve_sources(tokens, cwd=None):
@@ -1023,7 +1023,7 @@ def build_notes(items, annotated, paint):
 def export_annotated(rv, rvpush, tag, frames, folder):
     """Render the annotated frames through rvio from a copy of the live session, the way
     RV's File > Export > Annotated Frames does. Returns (images by frame, command, problems)."""
-    folder = Path(folder).resolve()
+    folder = Path(os.path.abspath(folder))
     folder.mkdir(parents=True, exist_ok=True)
     session = folder / "annotated_session.rv"
     _rvpush(rvpush, tag, "py-eval-return",
@@ -1068,8 +1068,8 @@ def read_notes(rv, rvpush, tag, export_dir=None):
         for v in notes.values():
             for n in v:
                 n["image"] = images.get(n["frame"])
-        export = {"folder": str(Path(export_dir).resolve()), "command": cmd,
-                  "session": str(Path(export_dir).resolve() / "annotated_session.rv")}
+        export = {"folder": str(Path(os.path.abspath(export_dir))), "command": cmd,
+                  "session": str(Path(os.path.abspath(export_dir)) / "annotated_session.rv")}
     out_items = []
     for it in items:
         d = _public_item(it, it.get("_sources", []), it.get("frames"))
@@ -1218,11 +1218,11 @@ def review(tokens, rv, rvpush, tag=DEFAULT_TAG, marks="auto", compare="sequence"
         if stereo:
             sm["stereo"] = stereo
         path = rv_session.write(sm, save_session, marks=list(marks), fps=fps)
-        session_out = str(Path(path).resolve())
+        session_out = str(Path(os.path.abspath(path)))
         sp = rv_session.structural_problems(Path(path).read_text(encoding="utf-8"))
         problems += [f"saved session: {p}" for p in sp]
     elif session_file:
-        session_out = str(Path(session_file).resolve())
+        session_out = str(Path(os.path.abspath(session_file)))
     n_sources = (state or {}).get("sources", len(groups)) if session_file else len(groups)
     return {"action": action, "pid": pid, "tag": tag, "sources": n_sources, "marks": list(marks),
             "views": view_assign, "title": manifest.get("title", ""),

@@ -22,6 +22,7 @@ Typical sets (the capture layouts are in references/ui-app-web.md):
 For two variants with difference images use compare_dirs.py instead.
 Writes the frames and DIR/frames.json; prints one JSON line. Exit 0 ok, 2 error.
 """
+import os
 import argparse
 import json
 import sys
@@ -29,7 +30,7 @@ from pathlib import Path
 
 from PIL import Image
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(os.path.abspath(__file__)).parent))
 import compare_dirs as cd  # noqa: E402
 import sheet_panels as sp  # noqa: E402
 
@@ -71,7 +72,7 @@ def collect(variants, exts=cd.IMAGE_EXTS, include=(), exclude=(), match="exact")
 
 def build(variants, out, title="", labels=None, exts=cd.IMAGE_EXTS, include=(), exclude=(),
           match="exact", anchor="top-left", svg_opts=None, skip_incomplete=False):
-    out = Path(out).resolve()
+    out = Path(os.path.abspath(out))
     out.mkdir(parents=True, exist_ok=True)
     screens, table = collect(variants, exts, include, exclude, match)
     if not screens:

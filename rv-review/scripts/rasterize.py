@@ -168,7 +168,7 @@ def command(backend, exe, svg, out, w, h):
 
 
 def _html_page(svg, w, h):
-    src = "file:" + pathname2url(str(Path(svg).resolve()))
+    src = "file:" + pathname2url(str(Path(os.path.abspath(svg))))
     return ("<!doctype html><html><head><style>html,body{margin:0;padding:0;background:transparent;"
             "overflow:hidden}img{display:block}</style></head><body>"
             f'<img src="{src}" width="{w}" height="{h}"></body></html>')
@@ -190,7 +190,7 @@ def _render_browser(backend, exe, svg, out, w, h):
                 b.close()
             return
         import web_capture
-        cmd = web_capture.chrome_args(exe, url, str(Path(out).resolve()), w, h, 1.0,
+        cmd = web_capture.chrome_args(exe, url, str(Path(os.path.abspath(out))), w, h, 1.0,
                                       str(Path(tmp) / "profile"), transparent=True)
         cmd.insert(-1, "--allow-file-access-from-files")
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
@@ -243,7 +243,7 @@ def rasterize(svg, out, size=None, scale=1.0, background="transparent", backend=
         if r.returncode != 0 or not out.is_file():
             raise RasterizeError(f"{b} failed on {svg}: {(r.stderr or r.stdout)[-400:]}")
     flatten(out, background)
-    return {"out": str(out.resolve()), "backend": b, "size": [w, h]}
+    return {"out": str(Path(os.path.abspath(out))), "backend": b, "size": [w, h]}
 
 
 def build_parser():

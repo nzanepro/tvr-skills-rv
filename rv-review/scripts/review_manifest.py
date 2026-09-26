@@ -35,6 +35,7 @@ and converted: one item per frame, one group per sheet.
 
 Relative paths resolve against the manifest's folder (the current folder for stdin).
 """
+import os
 import json
 import re
 import sys
@@ -274,7 +275,7 @@ def load(path_or_dash):
             p = Path(path_or_dash)
             if not p.is_file():
                 raise ManifestError([f"manifest not found: {p}"])
-            text, base = p.read_text(encoding="utf-8"), p.resolve().parent
+            text, base = p.read_text(encoding="utf-8"), Path(os.path.abspath(p)).parent
         data = json.loads(text)
     except json.JSONDecodeError as e:
         raise ManifestError([f"manifest is not valid JSON: {e}"]) from None
