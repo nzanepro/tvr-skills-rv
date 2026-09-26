@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "rv",
-      "description": "Review renders, comparison sheets, movies, image sequences, stereo / multi-view EXRs and 360 images in RV / OpenRV as a labelled flipbook, with wipe and difference A/B compare",
+      "description": "Agent Skills for RV, OpenRV and Autodesk RV / ShotGrid RV: labelled flipbook review and A/B compare, plus the command-line tools rvio (convert and transcode, slates, burn-ins, LUTs), rvls (list sequences, find missing frames, read headers) and rvpkg (install and manage RV packages)",
       "version": "0.1.0",
       "license": "MIT",
       "category": "media",
@@ -33,7 +33,17 @@
         "multi-view",
         "equirectangular",
         "rvpush",
-        "agent-skills"
+        "agent-skills",
+        "rvio",
+        "rvls",
+        "rvpkg",
+        "transcode",
+        "format-conversion",
+        "dpx",
+        "slate",
+        "burn-in",
+        "missing-frames",
+        "rv-packages"
       ],
       "tags": [
         "rv",
@@ -55,14 +65,27 @@
         "multi-view",
         "equirectangular",
         "rvpush",
-        "agent-skills"
+        "agent-skills",
+        "rvio",
+        "rvls",
+        "rvpkg",
+        "transcode",
+        "format-conversion",
+        "dpx",
+        "slate",
+        "burn-in",
+        "missing-frames",
+        "rv-packages"
       ],
       "homepage": "https://github.com/nzanepro/tvr-skills-rv",
       "repository": "https://github.com/nzanepro/tvr-skills-rv",
       "source": "./",
       "strict": false,
       "skills": [
-        "./rv-review"
+        "./rv-review",
+        "./rvio",
+        "./rvls",
+        "./rvpkg"
       ]
     }
   ]

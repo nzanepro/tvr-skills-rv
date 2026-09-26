@@ -1,0 +1,82 @@
+[
+  {
+    "query": "install the ocio package for everyone on the render farm",
+    "should_trigger": true
+  },
+  {
+    "query": "is the custom annotate mode loaded in RV right now",
+    "should_trigger": true
+  },
+  {
+    "query": "add the lookdev_tools rvpkg to my user area and install it",
+    "should_trigger": true
+  },
+  {
+    "query": "uninstall that old frameburn overlay package, it's causing conflicts",
+    "should_trigger": true
+  },
+  {
+    "query": "whats installed vs just available in the studio support area",
+    "should_trigger": true
+  },
+  {
+    "query": "opt in the lat_long_viewer package so it loads for everyone using this share",
+    "should_trigger": true
+  },
+  {
+    "query": "wer does rv even look for packages on this machine",
+    "should_trigger": true
+  },
+  {
+    "query": "remove the beta annotation mode entirely, delete the rvpkg file too",
+    "should_trigger": true
+  },
+  {
+    "query": "check the details on this rvpkg before I install it, what modes does it add",
+    "should_trigger": true
+  },
+  {
+    "query": "set up a shared RV_SUPPORT_PATH for the studio so packages install once for the team",
+    "should_trigger": true
+  },
+  {
+    "query": "open these in RV to compare",
+    "should_trigger": false
+  },
+  {
+    "query": "convert this EXR sequence to an mp4",
+    "should_trigger": false
+  },
+  {
+    "query": "edit this image",
+    "should_trigger": false
+  },
+  {
+    "query": "are there any missing frames in renders/sh020/",
+    "should_trigger": false
+  },
+  {
+    "query": "what codec is turntable.mov using",
+    "should_trigger": false
+  },
+  {
+    "query": "resize these plates down to 1920x1080 proxies",
+    "should_trigger": false
+  },
+  {
+    "query": "wipe between v001 and v002 of the comp so I can see what changed",
+    "should_trigger": false
+  },
+  {
+    "query": "install python on this machine, need it for some scripts",
+    "should_trigger": false
+  },
+  {
+    "query": "pip install numpy for this project",
+    "should_trigger": false
+  },
+  {
+    "query": "write a for loop that prints even numbers",
+    "should_trigger": false
+  }
+]

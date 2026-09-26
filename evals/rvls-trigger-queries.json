@@ -1,0 +1,82 @@
+[
+  {
+    "query": "are there any missing frames in renders/sh020/",
+    "should_trigger": true
+  },
+  {
+    "query": "list the frame range for the plate sequence in this folder",
+    "should_trigger": true
+  },
+  {
+    "query": "what resolution and bit depth is comp_v003.exr",
+    "should_trigger": true
+  },
+  {
+    "query": "check that the sh020 render actually wrote frames 1001 through 1100 with no gaps",
+    "should_trigger": true
+  },
+  {
+    "query": "how many channels does this multi-layer exr have",
+    "should_trigger": true
+  },
+  {
+    "query": "what codec and pixel format is turntable.mov using",
+    "should_trigger": true
+  },
+  {
+    "query": "shot010 dpx header says 8i, is it actually 10-bit under the hood",
+    "should_trigger": true
+  },
+  {
+    "query": "whats sitting in the dailies folder, collapse it to ranges pls",
+    "should_trigger": true
+  },
+  {
+    "query": "does comp_v003.mov have audio, and what's the sample rate",
+    "should_trigger": true
+  },
+  {
+    "query": "make sure the copy actually landed all 250 frames of the plate before I delete the source",
+    "should_trigger": true
+  },
+  {
+    "query": "open these in RV to compare",
+    "should_trigger": false
+  },
+  {
+    "query": "convert this EXR sequence to an mp4",
+    "should_trigger": false
+  },
+  {
+    "query": "edit this image",
+    "should_trigger": false
+  },
+  {
+    "query": "install the ocio package for everyone on the render farm",
+    "should_trigger": false
+  },
+  {
+    "query": "is the custom annotate mode loaded in RV right now",
+    "should_trigger": false
+  },
+  {
+    "query": "resize these plates down to 1920x1080 proxies",
+    "should_trigger": false
+  },
+  {
+    "query": "bake a rec709 lut into these renders before dailies",
+    "should_trigger": false
+  },
+  {
+    "query": "flip between v001 and v002 so I can see what changed",
+    "should_trigger": false
+  },
+  {
+    "query": "play the turntable movie back for me",
+    "should_trigger": false
+  },
+  {
+    "query": "sort this list of numbers in python",
+    "should_trigger": false
+  }
+]

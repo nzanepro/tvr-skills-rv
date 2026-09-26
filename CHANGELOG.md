@@ -20,7 +20,24 @@ skill's `SKILL.md` and the marketplace entry.
   layouts (sequence, wipe, difference, over, replace, tile), multi-view selection and
   expansion, stereo modes, the lat-long viewer, automatic marks from the sequence EDL, and a
   verified JSON result.
-- References: media types, rv / rvpush by hand, stacked sheet layout.
+- References: media types, rv / rvpush by hand, the rv command line and bundled tools, stacked sheet layout.
+- `rvio` skill: converting and transcoding with rvio (image sequences, stills and movies;
+  EXR, DPX, TIFF, PNG, JPEG; MOV / MP4 / MXF; resize, crop, ranges, fps, audio; sRGB / log /
+  Rec.709 / ACES, LUTs and baked OCIO; slates, frame burn-ins, watermarks, mattes, logos;
+  EXR headers and stereo / multi-view). `rvio_cmd.py` builds and checks commands before they
+  run (missing inputs, wildcards, frame notation, codecs the build cannot write, output
+  folder) and counts the written files; `rvio_codecs.py` probes the movie codecs a build can
+  write. References include commands and codec results verified on OpenRV 3.1.
+- `rvls` skill: listing and inspecting sequences and movies with rvls; `rvls_check.py` reports
+  frames, missing frames, size, pixel type and audio as JSON and checks renders and
+  conversions against an expected range, count, size and type.
+- `rvpkg` skill: listing, adding, installing, uninstalling, removing and opting in RV
+  packages; `rvpkg_list.py` reports packages and support areas as JSON; references on
+  support areas, `RV_SUPPORT_PATH` and the `.rvpkg` format.
+- `rv_find.py` and `rv_tool.py` in each command-line skill: find RV's tools on Windows, macOS
+  and Linux, and run them with argument lists, closed stdin and timeouts, failing when a tool
+  prints errors but exits 0.
+- Tests and trigger evals for the three command-line skills.
 - Claude Code plugin marketplace (`.claude-plugin/marketplace.json`), trigger evals, tests and
   CI on Windows, macOS and Linux.
 

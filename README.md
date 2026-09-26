@@ -18,9 +18,9 @@ flips versions in place; the timeline marks jump between views.*
 | Skill | What it does |
 |---|---|
 | [`rv-review`](rv-review/SKILL.md) | Loads stills, stacked comparison sheets, movies, image sequences, multi-view / stereo EXRs and 360 lat-long images into one RV review window, and verifies the load |
-| [`rvio`](rvio/SKILL.md) | Converting and transcoding media with rvio |
-| [`rvls`](rvls/SKILL.md) | Listing and inspecting image sequences and media with rvls |
-| [`rvpkg`](rvpkg/SKILL.md) | Installing and managing RV packages with rvpkg |
+| [`rvio`](rvio/SKILL.md) | Convert image sequences to movies and back with rvio: EXR / OpenEXR, DPX, TIFF, PNG, JPEG, MOV / MP4; resize, crop, frame ranges, fps, audio, colour (sRGB, log, ACES, LUTs, baked OCIO), slates, frame burn-ins, watermarks |
+| [`rvls`](rvls/SKILL.md) | List image sequences and find missing frames with rvls: frame ranges, gaps, resolution, bit depth, codec, timecode and full file headers; checks that a render or conversion is complete |
+| [`rvpkg`](rvpkg/SKILL.md) | Install, uninstall and opt in to RV packages (.rvpkg plugins) with rvpkg; list what is installed and loaded, and set up support areas |
 
 The rest of this README describes `rv-review`.
 
@@ -240,6 +240,27 @@ renders only.
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).
+
+## RV command-line skills: rvio, rvls, rvpkg
+
+Three smaller skills drive RV's command-line tools. Each is self-contained (its own copy of
+`rv_find.py` and `rv_tool.py`, standard-library Python, Windows / macOS / Linux) and can be
+installed on its own.
+
+| Skill | Scripts | Checked against OpenRV 3.1 |
+|---|---|---|
+| `rvio`: convert and transcode | `rvio_cmd.py` builds and checks an rvio command (missing inputs, frame notation, codecs, output folder) and can run it and count the files; `rvio_codecs.py` lists the movie codecs your build can really write | sequence <-> movie, EXR / DPX / TIFF / PNG / JPEG, MJPEG / MPEG-4 / ProRes / DNxHD, resize and crop, sRGB / log / LUT round trips, audio, stereo EXR, slates and overlays |
+| `rvls`: list and inspect | `rvls_check.py` turns `rvls -l` into JSON with frames, missing frames, size and type, and fails when a range, size or frame count is wrong | gaps, padding, negative and stepped ranges, movies with audio, unreadable files |
+| `rvpkg`: manage packages | `rvpkg_list.py` lists packages as JSON with installed / loaded / optional flags and `-info` details | add, install, opt-in, uninstall, remove in a throw-away support area; a custom rvio overlay shipped as a package |
+
+Things these skills protect against, all seen with OpenRV 3.1: rvio exits 0 and writes a
+placeholder movie when an input is missing; it fills gaps in a sequence by repeating frames;
+it cannot write H.264 (stock OpenRV writes MJPEG, MPEG-4 and PNG movies; ProRes and DNxHD only
+in builds that enable them); rvls exits 0 for paths that do not exist and counts a sequence's
+span rather than its files; rvpkg exits 0 when a package name does not match.
+
+Install one or all of them like `rv-review`, e.g.
+`cp -r tvr-skills-rv/rvio tvr-skills-rv/rvls tvr-skills-rv/rvpkg ~/.claude/skills/`.
 
 ## See also
 

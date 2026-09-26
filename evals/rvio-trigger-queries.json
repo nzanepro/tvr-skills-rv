@@ -1,0 +1,82 @@
+[
+  {
+    "query": "convert this EXR sequence to an mp4",
+    "should_trigger": true
+  },
+  {
+    "query": "can you transcode shot010.mov to a jpg sequence with rvio",
+    "should_trigger": true
+  },
+  {
+    "query": "resize the plate sequence down to 1920x1080 proxies before we ship them",
+    "should_trigger": true
+  },
+  {
+    "query": "need a movie the client can actually open, bake in rec709 and burn in the frame numbers",
+    "should_trigger": true
+  },
+  {
+    "query": "convert plate.#.dpx to half float exr with dwaa compression",
+    "should_trigger": true
+  },
+  {
+    "query": "delivery wants h264 but our rv build only writes mjpeg, is there a way around that",
+    "should_trigger": true
+  },
+  {
+    "query": "cn u conver the sh020 turntbale seq to prores for editorial",
+    "should_trigger": true
+  },
+  {
+    "query": "join these three clips into one movie and renumber the frames starting at 1001",
+    "should_trigger": true
+  },
+  {
+    "query": "apply the show lut and write out an aces exr from these log plates",
+    "should_trigger": true
+  },
+  {
+    "query": "slate every version with the shot name before it goes to dailies",
+    "should_trigger": true
+  },
+  {
+    "query": "open these in RV to compare",
+    "should_trigger": false
+  },
+  {
+    "query": "edit this image",
+    "should_trigger": false
+  },
+  {
+    "query": "are there any missing frames in renders/sh020/",
+    "should_trigger": false
+  },
+  {
+    "query": "list what's inside comp_v003.mov, codec and pixel format",
+    "should_trigger": false
+  },
+  {
+    "query": "install the ocio color package in RV",
+    "should_trigger": false
+  },
+  {
+    "query": "check if the lens distortion package is loaded for everyone on this machine",
+    "should_trigger": false
+  },
+  {
+    "query": "wipe between v001 and v002 of the comp so I can spot the difference",
+    "should_trigger": false
+  },
+  {
+    "query": "transcode this clip to h265 with ffmpeg using hardware nvenc",
+    "should_trigger": false
+  },
+  {
+    "query": "remove the background from this still",
+    "should_trigger": false
+  },
+  {
+    "query": "write a quicksort function in python",
+    "should_trigger": false
+  }
+]
