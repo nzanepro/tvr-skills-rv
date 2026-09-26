@@ -319,3 +319,28 @@ def test_label_rejects_images_of_different_sizes(tmp_path, sp):
     with pytest.raises(SystemExit) as excinfo:
         sp.label("Shot 010", [(str(path_a), "before"), (str(path_b), "after")], tmp_path / "out")
     assert "differs from" in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# labelled_frame(): the title band + label box helper shared by label() and
+# the other frame writers (compare_dirs.py, review_set.py)
+# ---------------------------------------------------------------------------
+
+def test_labelled_frame_grows_height_by_title_band_and_keeps_width(sp):
+    src = Image.new("RGB", (220, 130), (90, 90, 90))
+
+    frame = sp.labelled_frame(src, "Shot 010: comparison", "before")
+
+    assert frame.width == src.width
+    assert frame.height == src.height + sp.TITLE_BAND_H
+
+
+def test_labelled_frame_label_box_is_solid_black(sp):
+    src = Image.new("RGB", (220, 130), (90, 90, 90))
+
+    frame = sp.labelled_frame(src, "Shot 010: comparison", "before")
+
+    x = sp.LABEL_BOX_LEFT + 1
+    y = sp.TITLE_BAND_H + sp.LABEL_BOX_TOP + 1
+    assert frame.mode == "RGB"
+    assert frame.getpixel((x, y)) == (0, 0, 0)

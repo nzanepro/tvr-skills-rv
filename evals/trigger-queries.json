@@ -118,5 +118,85 @@
   {
     "query": "write a multi-view exr from these three camera renders",
     "should_trigger": false
+  },
+  {
+    "query": "the playwright screenshot tests failed on this branch, show me what actually changed",
+    "should_trigger": true
+  },
+  {
+    "query": "compare the baseline and candidate screenshot folders and let me flip through whatever differs",
+    "should_trigger": true
+  },
+  {
+    "query": "put the old and new icon svgs side by side so I can check the redesign",
+    "should_trigger": true
+  },
+  {
+    "query": "does the build match the design export for the checkout screen? let me see them over each other",
+    "should_trigger": true
+  },
+  {
+    "query": "show me the pricing page at phone, tablet and desktop width before and after the css refactor",
+    "should_trigger": true
+  },
+  {
+    "query": "flip through the login screen in light and dark mode and at the largest text size on the simulator",
+    "should_trigger": true
+  },
+  {
+    "query": "the unity graphics tests are red, can I see reference vs actual for each failing scene",
+    "should_trigger": true
+  },
+  {
+    "query": "save this review as an rv session so I can reopen it tomorrow",
+    "should_trigger": true
+  },
+  {
+    "query": "the supervisor drew notes on a few frames in RV, pull them out so the tracker skill can post them",
+    "should_trigger": true
+  },
+  {
+    "query": "check the arabic and german screenshots against english for truncated or mirrored layouts",
+    "should_trigger": true
+  },
+  {
+    "query": "write a playwright test that takes a screenshot of the login page",
+    "should_trigger": false
+  },
+  {
+    "query": "set up visual regression testing in our CI pipeline",
+    "should_trigger": false
+  },
+  {
+    "query": "update the status of version 12 in the tracker to approved",
+    "should_trigger": false
+  },
+  {
+    "query": "export these svg icons to png at 2x for the android app",
+    "should_trigger": false
+  },
+  {
+    "query": "take a screenshot of the homepage and attach it to the ticket",
+    "should_trigger": false
+  },
+  {
+    "query": "run a lighthouse accessibility audit on the checkout page",
+    "should_trigger": false
+  },
+  {
+    "query": "the snapshot test for the button component is failing, fix the css",
+    "should_trigger": false
+  },
+  {
+    "query": "create a playlist of today's versions in the production tracker",
+    "should_trigger": false
+  },
+  {
+    "query": "compute the SSIM score between these two screenshots",
+    "should_trigger": false
+  },
+  {
+    "query": "boot the iOS simulator and install the latest build",
+    "should_trigger": false
   }
 ]

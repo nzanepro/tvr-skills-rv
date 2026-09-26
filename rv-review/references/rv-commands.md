@@ -86,6 +86,7 @@ Per-source detail: `rv.commands.sourceMediaInfo(src)` (keys `file`, `startFrame`
 | (default) | `setViewNode('defaultSequence')` | sources back to back |
 | `-wipe` | stack + composite `over` + `rv.runtime.eval('rvui.toggleWipe();', ['rvui'])` | wipe between the first two |
 | `-diff` | `setStringProperty('defaultStack_stack.composite.type', ['difference'], True); setViewNode('defaultStack')` | difference |
+| (menu: Difference (Inverted)) | composite `-difference` on defaultStack | B minus A: the other direction of the one-sided difference (`--compare difference-inverted`) |
 | `-over`, `-replace`, `-topmost` | composite `over` / `replace` / `topmost` on defaultStack | stacked |
 | `-tile` | `setViewNode('defaultLayout')` | side by side (layout `packed`) |
 | `-stereo pair`, `-stereoSwap 1` | `setStringProperty('@RVDisplayStereo.stereo.type', ['pair'], True)` | stereo display |

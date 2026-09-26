@@ -5,12 +5,12 @@
     "url": "https://github.com/nzanepro"
   },
   "description": "Agent Skills for media review in RV, OpenRV and Autodesk RV / ShotGrid RV: flipbooks, A/B compare, image sequences and RV command-line tools",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "plugins": [
     {
       "name": "rv",
-      "description": "Agent Skills for RV, OpenRV and Autodesk RV / ShotGrid RV: labelled flipbook review and A/B compare, plus the command-line tools rvio (convert and transcode, slates, burn-ins, LUTs), rvls (list sequences, find missing frames, read headers) and rvpkg (install and manage RV packages)",
-      "version": "0.1.0",
+      "description": "Agent Skills for RV, OpenRV and Autodesk RV / ShotGrid RV: labelled flipbook review and A/B compare, plus the command-line tools rvio (convert and transcode, slates, burn-ins, LUTs), rvls (list sequences, find missing frames, read headers) and rvpkg (install and manage RV packages), with baseline vs candidate comparison for renders, UI and web screenshots, .rv sessions and review notes",
+      "version": "0.2.0",
       "license": "MIT",
       "category": "media",
       "keywords": [
@@ -43,7 +43,21 @@
         "slate",
         "burn-in",
         "missing-frames",
-        "rv-packages"
+        "rv-packages",
+        "visual-regression",
+        "screenshot-diff",
+        "ui-review",
+        "design-review",
+        "web-screenshots",
+        "responsive",
+        "svg",
+        "playwright",
+        "mobile-screenshots",
+        "accessibility-review",
+        "rv-session",
+        "annotations",
+        "review-notes",
+        "production-tracking"
       ],
       "tags": [
         "rv",
@@ -75,7 +89,21 @@
         "slate",
         "burn-in",
         "missing-frames",
-        "rv-packages"
+        "rv-packages",
+        "visual-regression",
+        "screenshot-diff",
+        "ui-review",
+        "design-review",
+        "web-screenshots",
+        "responsive",
+        "svg",
+        "playwright",
+        "mobile-screenshots",
+        "accessibility-review",
+        "rv-session",
+        "annotations",
+        "review-notes",
+        "production-tracking"
       ],
       "homepage": "https://github.com/nzanepro/tvr-skills-rv",
       "repository": "https://github.com/nzanepro/tvr-skills-rv",

@@ -5,6 +5,22 @@ All notable changes to this project are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The version matches `metadata.version` in each
 skill's `SKILL.md` and the marketplace entry.
 
+## [0.2.0] - 2026-09-26
+
+### Added
+
+- `rv-review`: baseline vs candidate comparison (`compare_dirs.py`): pairs two folders, two files or a test tool's output (Playwright, jest-image-snapshot, Unity Graphics Test Framework, Unreal automation report, Flutter goldens), measures differences, and writes labelled baseline / candidate / absolute-difference frames of the changed pairs, most changed first, with `frames.json`, `compare_report.json` / `.md` and CI exit codes (0 same, 1 changed, 2 error).
+- `review_set.py`: one screen across many variants (devices, light / dark, text sizes, locales, states) back to back with a mark per screen.
+- UI, app and web capture: `web_capture.py` (pages at named breakpoints through Playwright or an installed Chrome / Edge), `app_capture.py` (iOS Simulator, Android, Electron; appearance, text size, display size, locale), `rasterize.py` (SVG to PNG through resvg, rsvg-convert, CairoSVG, Inkscape, Playwright or Chrome). Nothing is installed; backends are detected.
+- `.rv` session writer (`rv_session.py write|check|render`, standard library): sequences with marks, wipe / difference stacks, tile, per-source in / out, fps, views, text annotations, and gtoinfo checks and rvio rendering. The launcher opens `.rv` files and writes them with `--save-session`.
+- Integration for other skills: versioned review manifest (`--manifest`, `schema_version` 1) with free-form `meta` carried through; JSON results with each item's frame range; `--notes` / `--export-annotated` read the reviewer's annotations back per item; RV's ERROR / WARNING log lines are reported and fail the load.
+- References: compare-dirs, ui-app-web, sessions, integration. `--compare difference-inverted`.
+- Contributing guide, security policy, issue and pull-request templates, `scripts/check_repo.py` (frontmatter, manifest paths and privacy checks), an animated demo, a README Support section and a GitHub Sponsor button.
+
+### Changed
+
+- Every `rv_review.py` output, errors included, is one JSON line with `schema`, `schema_version`, `ok` and `exit_code`; `--state` now prints that envelope with the state under `state`.
+
 ## [0.1.0] - 2026-09-26
 
 ### Added
@@ -41,4 +57,5 @@ skill's `SKILL.md` and the marketplace entry.
 - Claude Code plugin marketplace (`.claude-plugin/marketplace.json`), trigger evals, tests and
   CI on Windows, macOS and Linux.
 
+[0.2.0]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.1.0

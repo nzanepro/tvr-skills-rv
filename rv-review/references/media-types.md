@@ -30,7 +30,7 @@ Contents: [Movies](#movies) · [Image sequences](#image-sequences) ·
   | Option | RV view | Use |
   |---|---|---|
   | `--compare wipe` | defaultStack, composite over, wipes on | drag the wipe line between two versions |
-  | `--compare difference` | defaultStack, composite difference | shows A minus B clamped at zero: only where the first source is brighter; where the second is brighter also reads black, and alpha is subtracted too. Run it again with the sources swapped to see the other direction |
+  | `--compare difference` | defaultStack, composite difference | shows A minus B clamped at zero: only where the first source is brighter; where the second is brighter also reads black, and alpha is subtracted too. Run `--compare difference-inverted` (B minus A) for the other direction, or use `compare_dirs.py` for an absolute difference image |
   | `--compare over` / `replace` | defaultStack | first source on top |
   | `--compare tile` | defaultLayout (packed) | all sources side by side |
 

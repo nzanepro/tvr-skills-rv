@@ -146,27 +146,37 @@ def split(sheets, out):
     return paths
 
 
-def label(title_text, items, out):
-    out = Path(out).resolve()
-    font, small = _fonts()
-    out.mkdir(parents=True, exist_ok=True)
-    paths, size = [], None
+def labelled_frame(im, title_text, text, fonts=None):
+    """One RGB frame: a title band with title_text above im, and a label box with text in
+    the image's top-left corner. Shared by 'label' and the other frame writers
+    (compare_dirs.py, review_set.py) so every frame in a review looks the same."""
+    font, small = fonts or _fonts()
+    im = im.convert("RGB")
     box_top = TITLE_BAND_H + LABEL_BOX_TOP
     text_pos = (LABEL_BOX_LEFT + LABEL_PAD_X, box_top + LABEL_PAD_Y)
+    frame = Image.new("RGB", (im.width, im.height + TITLE_BAND_H), BG)
+    d = ImageDraw.Draw(frame)
+    d.text(TITLE_TEXT_POS, title_text, fill=TITLE_TEXT_COLOR, font=font)
+    frame.paste(im, (0, TITLE_BAND_H))
+    tw = d.textbbox(text_pos, text, font=small)[2]
+    d.rectangle([LABEL_BOX_LEFT, box_top, tw + LABEL_PAD_X, box_top + LABEL_BOX_H],
+                fill=LABEL_BOX_COLOR)
+    d.text(text_pos, text, fill=LABEL_TEXT_COLOR, font=small)
+    return frame
+
+
+def label(title_text, items, out):
+    out = Path(out).resolve()
+    fonts = _fonts()
+    out.mkdir(parents=True, exist_ok=True)
+    paths, size = [], None
     for i, (img, text) in enumerate(items, 1):
         im = Image.open(img).convert("RGB")
         if size and im.size != size:
             sys.exit(f"{img}: size {im.size} differs from {size}; frames would not line up "
                      "(re-render or resize so every image has the same size)")
         size = im.size
-        frame = Image.new("RGB", (im.width, im.height + TITLE_BAND_H), BG)
-        d = ImageDraw.Draw(frame)
-        d.text(TITLE_TEXT_POS, title_text, fill=TITLE_TEXT_COLOR, font=font)
-        frame.paste(im, (0, TITLE_BAND_H))
-        tw = d.textbbox(text_pos, text, font=small)[2]
-        d.rectangle([LABEL_BOX_LEFT, box_top, tw + LABEL_PAD_X, box_top + LABEL_BOX_H],
-                    fill=LABEL_BOX_COLOR)
-        d.text(text_pos, text, fill=LABEL_TEXT_COLOR, font=small)
+        frame = labelled_frame(im, title_text, text, fonts)
         p = out / f"{Path(img).stem}__{_safe(text)}__{i}.png"
         frame.save(p)
         paths.append(p)

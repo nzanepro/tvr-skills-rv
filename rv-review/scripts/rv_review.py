@@ -32,15 +32,26 @@ Finding RV (first match wins; rvpush must sit next to rv):
        macOS    /Applications and ~/Applications: RV*.app, OpenRV*.app (Contents/MacOS)
        Linux    /opt/rv*/bin, /opt/RV*/bin, /opt/OpenRV*/bin, /usr/local/rv*/bin, /usr/local/bin
 
-Output: one JSON line on stdout, for example
-  {"action": "launched", "pid": 1234, "tag": "rv-review", "sources": 2, "marks": [1, 13],
-   "state": {...}, "problems": [], "ok": true}
-"ok" is true when the state read back from RV matches what was loaded; "problems" lists
-any difference. --state prints only the "state" object of the running review window.
+Callers such as other skills pass a review manifest (--manifest FILE, or - for stdin): ordered
+items with labels, groups, in / out, fps, views and a free-form "meta" object that comes back
+untouched in the result and in --notes. A .rv session file given as the only source is opened
+as it is. --save-session writes a .rv of what was loaded. --notes reads the reviewer's
+annotations back per item; --export-annotated renders the annotated frames through rvio.
 
-Exit status: 0 loaded and verified; 1 error (RV not found, source missing, RV did not
-answer); 2 bad arguments; 3 loaded but the read-back did not match (run again once, then
-report the problems).
+Output: exactly one JSON line on stdout, also for errors (schema "rv-review.result",
+schema_version 1), for example
+  {"schema": "rv-review.result", "schema_version": 1, "ok": true, "exit_code": 0,
+   "action": "launched", "pid": 1234, "tag": "rv-review", "sources": 2, "marks": [1, 13],
+   "items": [{"index": 0, "label": "v1", "frames": [1, 12], "sources": [...], "meta": {}}, ...],
+   "state": {...}, "problems": [], "errors": [], "warnings": [], ...}
+"ok" is true when the state read back from RV matches what was loaded and RV logged no
+ERROR lines during the load; "problems" lists any difference, "errors" / "warnings" the
+lines RV logged. Every item carries its global frame range, so a frame maps back to its item
+and meta. The full schema is in references/integration.md.
+
+Exit status: 0 loaded and verified; 1 error (RV not found, source or manifest problem, RV did
+not answer); 2 bad arguments; 3 loaded but the read-back did not match or RV logged errors
+(run again once, then report the problems).
 """
 import argparse
 import ast
@@ -54,6 +65,10 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import review_manifest as rm  # noqa: E402  (same folder; standard library only)
+import rv_session  # noqa: E402
+
 DEFAULT_TAG = "rv-review"     # network tag that marks the review window; one window per tag
 STILL_FPS = 1.0               # Space plays one still per second: slow enough to compare versions
 LAUNCH_TIMEOUT_S = 60.0       # a cold RV start with many frames can take tens of seconds
@@ -65,7 +80,7 @@ CREATE_BREAKAWAY_FROM_JOB = 0x01000000   # Windows process flag; not exported by
 STILL_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".exr", ".dpx", ".cin", ".tga",
               ".bmp", ".gif", ".hdr", ".jp2", ".j2k", ".psd", ".sgi", ".rgb", ".webp", ".iff"}
 SEQUENCE_RE = re.compile(r"#|@+|%0?\d*d")          # RV sequence notation in a file name
-COMPARE_MODES = ("sequence", "wipe", "difference", "over", "replace", "tile")
+COMPARE_MODES = ("sequence", "wipe", "difference", "difference-inverted", "over", "replace", "tile")
 STEREO_MODES = ("off", "anaglyph", "lumanaglyph", "pair", "mirror", "hsqueezed", "vsqueezed",
                 "checker", "scanline", "left", "right", "hardware")   # RVDisplayStereo stereo.type
 SEQ_EDL = "defaultSequence_sequence.edl.frame"     # global start frame of every source, plus end
@@ -262,16 +277,19 @@ def group_sources(tokens):
     return groups
 
 
+OPTION_VALUES = {"-noMovieAudio": 0, "-select": 2}   # per-source options; others take one value
+
+
 def _group_files(group):
     """File tokens of one group (skips brackets and per-source options and their values)."""
-    files, skip = [], False
+    files, skip = [], 0
     for t in group:
         if skip:
-            skip = False
+            skip -= 1
         elif t in ("[", "]"):
             continue
         elif t.startswith("-"):
-            skip = t not in ("-noMovieAudio",)       # options below take one value
+            skip = OPTION_VALUES.get(t, 1)
         else:
             files.append(t)
     return files
@@ -372,7 +390,7 @@ def post_commands(compare="sequence", marks=(), fps=None, stereo=None, stereo_vi
     elif compare == "sequence":
         c.append("rv.commands.setViewNode('defaultSequence')")
     else:
-        comp = "over" if compare == "wipe" else compare
+        comp = {"wipe": "over", "difference-inverted": "-difference"}.get(compare, compare)
         c.append(f"rv.commands.setStringProperty('defaultStack_stack.composite.type', ['{comp}'], True)")
         c.append("rv.commands.setViewNode('defaultStack')")
     want_wipe = "!=" if compare == "wipe" else "=="
@@ -471,12 +489,265 @@ def check_state(state, expected):
 VIEW_NODE_TYPES = {"sequence": "RVSequenceGroup", "tile": "RVLayoutGroup"}
 
 
+# --- items: what the caller asked for, mapped onto RV sources and frames -------------------
+
+def _item_from_group(group, index):
+    """A manifest-style item for one command-line source group (file or [ ... ] group)."""
+    files = _group_files(group)
+    item = {"index": index, "path": files if len(files) > 1 else files[0],
+            "label": Path(files[0]).name, "title": "", "meta": {}}
+    it = iter(group)
+    for t in it:
+        if t in ("-in", "-out"):
+            try:
+                item[t[1:]] = int(next(it))
+            except (StopIteration, ValueError):
+                pass
+        elif t == "-fps":
+            try:
+                item["fps"] = float(next(it))
+            except (StopIteration, ValueError):
+                pass
+        elif t == "-select":
+            kind, name = next(it, ""), next(it, "")
+            if kind == "view" and name:
+                item["view"] = name
+    return item
+
+
+def items_from_tokens(tokens):
+    return [_item_from_group(g, i) for i, g in enumerate(group_sources(tokens))]
+
+
+def manifest_tokens(manifest):
+    """rv / rvpush source arguments for a normalised manifest, one source per item."""
+    out = []
+    for it in manifest["items"]:
+        out += rm.rv_tokens(it)
+    return out
+
+
+def item_ranges(state, source_items, n_items, layout="sequence"):
+    """[(first, last)] global frames per item from the read-back state.
+
+    source_items: item index of every loaded source, in load order. In a sequence each source
+    covers its EDL span; stacks and tiles show every source over the whole range."""
+    if not state:
+        return [None] * n_items
+    start, end = int(state["frameStart"]), int(state["frameEnd"])
+    starts = list(state.get("sourceStarts") or [])
+    spans = []
+    for k in range(len(source_items)):
+        if layout != "sequence" or k >= len(starts):
+            spans.append((start, end))
+        else:
+            spans.append((starts[k], (starts[k + 1] - 1) if k + 1 < len(starts) else end))
+    ranges = [None] * n_items
+    for k, i in enumerate(source_items):
+        if i is None or i >= n_items or k >= len(spans):
+            continue
+        a, b = spans[k]
+        ranges[i] = (a, b) if ranges[i] is None else (min(ranges[i][0], a), max(ranges[i][1], b))
+    return ranges
+
+
+def item_at_frame(items, frame):
+    """The first item whose frame range holds a global frame, else None."""
+    for it in items:
+        fr = it.get("frames")
+        if fr and fr[0] <= frame <= fr[1]:
+            return it
+    return None
+
+
+def _public_item(it, sources=(), frames=None):
+    out = {"index": it["index"], "label": it["label"], "title": it.get("title", ""),
+           "group": it.get("group"), "path": it["path"], "sources": list(sources),
+           "frames": list(frames) if frames else None, "meta": it.get("meta", {})}
+    for k in ("in", "out", "fps", "view"):
+        if k in it:
+            out[k] = it[k]
+    return out
+
+
+def group_ranges(groups, items):
+    out = []
+    for g in groups:
+        fr = [it["frames"] for it in items if it.get("group") == g["id"] and it.get("frames")]
+        out.append({"id": g["id"], "label": g.get("label", g["id"]), "title": g.get("title", ""),
+                    "frames": [min(a for a, _ in fr), max(b for _, b in fr)] if fr else None,
+                    "meta": g.get("meta", {})})
+    return out
+
+
+def review_props_commands(source_names, source_items, items, session_node=None, manifest=None,
+                          chunk=6000):
+    """py-exec strings that store each item's label, title, group, view and meta on its RV
+    source (component 'review'), and the session title / meta / groups on the session node,
+    so --notes, --state and a saved session map frames back to items. Split into chunks to
+    stay under command-line length limits."""
+    props = []
+    for src, i in zip(source_names, source_items):
+        if i is None:
+            continue
+        it = items[i]
+        props.append((f"{src}.review.item", "int", it["index"]))
+        for key in ("label", "title", "group", "view"):
+            props.append((f"{src}.review.{key}", "string", str(it.get(key) or "")))
+        props.append((f"{src}.review.meta", "string",
+                      json.dumps(it.get("meta", {}), sort_keys=True, separators=(",", ":"))))
+    if session_node and manifest is not None:
+        base = f"{session_node}.review."
+        props.append((base + "schema_version", "int", rm.SCHEMA_VERSION))
+        for key in ("title", "layout"):
+            props.append((base + key, "string", str(manifest.get(key) or "")))
+        for key in ("meta", "groups"):
+            props.append((base + key, "string", json.dumps(manifest.get(key) or ({} if key == "meta" else []),
+                                                           sort_keys=True, separators=(",", ":"))))
+    cmds, cur = [], []
+
+    def flush():
+        if not cur:
+            return
+        s = [(p, v) for p, k, v in cur if k == "string"]
+        n = [(p, v) for p, k, v in cur if k == "int"]
+        parts = []
+        if s:
+            parts.append("[(rv.commands.newProperty(p, rv.commands.StringType, 1) if not "
+                         "rv.commands.propertyExists(p) else None, "
+                         "rv.commands.setStringProperty(p, [v], True)) for p, v in " + ascii(s) + "]")
+        if n:
+            parts.append("[(rv.commands.newProperty(p, rv.commands.IntType, 1) if not "
+                         "rv.commands.propertyExists(p) else None, "
+                         "rv.commands.setIntProperty(p, [v], True)) for p, v in " + ascii(n) + "]")
+        cmds.append("; ".join(parts))
+        cur.clear()
+
+    size = 0
+    for p in props:
+        cur.append(p)
+        size += len(repr(p))
+        if size > chunk:
+            flush()
+            size = 0
+    flush()
+    return cmds
+
+
+def annotation_commands(source_names, source_items, items):
+    """py-exec strings that draw each item's text annotations into its source's RVPaint node
+    in a live RV (the same properties rv_session.py writes into a .rv)."""
+    cmds = []
+    for src, i in zip(source_names, source_items):
+        if i is None or not items[i].get("annotations"):
+            continue
+        node = re.sub(r"_source$", "_paint", src)
+        rows = {"string": [], "float": [], "int": []}
+        for comp, kind, name, values, width in rv_session.paint_properties(items[i]):
+            rows[kind].append((f"{node}.{comp}.{name}", width, list(values)))
+        parts = []
+        for kind, typ, setter in (("string", "StringType", "setStringProperty"),
+                                  ("float", "FloatType", "setFloatProperty"),
+                                  ("int", "IntType", "setIntProperty")):
+            if rows[kind]:
+                parts.append(f"[(rv.commands.newProperty(p, rv.commands.{typ}, w) if not "
+                             f"rv.commands.propertyExists(p) else None, "
+                             f"rv.commands.{setter}(p, v, True)) for p, w, v in "
+                             + ascii(rows[kind]) + "]")
+        cmds.append("; ".join(parts))
+    return cmds
+
+
+# --- RV's log: errors and warnings logged during a load ---------------------------------
+
+LOG_LINE_RE = re.compile(
+    r"^(?:\[[^\]]*\]\s*\[[^\]]*\]\s*\[(?P<lvl1>[a-z]+)\]\s*(?P<msg1>.*)"     # [time] [OpenRV] [error] msg
+    r"|(?P<lvl2>ERROR|WARNING|CRITICAL|WARN)\s*:\s*(?P<msg2>.*))$")          # ERROR: msg
+LOG_IGNORE = ()   # message substrings that are known to be harmless; none so far
+
+
+def parse_log(text):
+    """(errors, warnings) from RV log text; INFO / DEBUG lines are dropped, duplicates merged."""
+    errors, warnings = [], []
+    for line in (text or "").splitlines():
+        m = LOG_LINE_RE.match(line.strip())
+        if not m:
+            continue
+        lvl = (m.group("lvl1") or m.group("lvl2") or "").lower()
+        msg = (m.group("msg1") if m.group("lvl1") else m.group("msg2")).strip()
+        if not msg or any(s in msg for s in LOG_IGNORE):
+            continue
+        if lvl in ("error", "critical", "err"):
+            if msg not in errors:
+                errors.append(msg)
+        elif lvl in ("warning", "warn"):
+            if msg not in warnings:
+                warnings.append(msg)
+    return errors, warnings
+
+
+def own_log_path(tag):
+    """Where this script sends the stdout / stderr of an RV it launches."""
+    import tempfile
+    safe = re.sub(r"[^A-Za-z0-9_-]+", "_", tag) or "rv"
+    return Path(tempfile.gettempdir()) / f"rv-review-{safe}.log"
+
+
+def app_log_path(env=None, platform=None, home=None):
+    """OpenRV's own log file (OpenRV src/lib/base/TwkUtil/FileLogger.cpp): Windows
+    %APPDATA%/ASWF/OpenRV/OpenRV.log, macOS ~/Library/Logs/ASWF/OpenRV.log, Linux
+    ~/.local/share/ASWF/OpenRV/OpenRV.log. Every OpenRV window appends to it."""
+    env = os.environ if env is None else env
+    home = Path(home) if home else Path.home()
+    kind = _os_kind(platform)
+    if kind == "windows":
+        base = env.get("APPDATA")
+        return Path(base) / "ASWF" / "OpenRV" / "OpenRV.log" if base else None
+    if kind == "macos":
+        return home / "Library" / "Logs" / "ASWF" / "OpenRV.log"
+    xdg = env.get("XDG_DATA_HOME")
+    return (Path(xdg) if xdg else home / ".local" / "share") / "ASWF" / "OpenRV" / "OpenRV.log"
+
+
+class LogWatch:
+    """Remembers the size of RV's log files, then returns what was written after that."""
+
+    def __init__(self, tag):
+        own = own_log_path(tag)
+        # the file this script captures belongs to one RV window; the shared app log is the
+        # fallback for windows started some other way (other RV windows write to it too)
+        self.paths = [own] if own.is_file() else [p for p in [app_log_path()] if p]
+        self.sizes = {p: (p.stat().st_size if p.is_file() else 0) for p in self.paths}
+
+    def use(self, path):
+        """Watch path from its current end (after launching RV with its output there)."""
+        self.paths = [Path(path)]
+        self.sizes = {Path(path): Path(path).stat().st_size if Path(path).is_file() else 0}
+
+    def new_text(self):
+        out = []
+        for p in self.paths:
+            try:
+                with open(p, "rb") as f:
+                    size = p.stat().st_size
+                    f.seek(self.sizes.get(p, 0) if size >= self.sizes.get(p, 0) else 0)
+                    out.append(f.read().decode("utf-8", "replace"))
+            except OSError:
+                continue
+        return "\n".join(out)
+
+    def sources(self):
+        return [str(p) for p in self.paths]
+
+
 # --- talking to RV ----------------------------------------------------------------------
 
 def _rvpush(rvpush, tag, *args):
     try:
+        # rvpush prints what RV returns as UTF-8 on every platform
         r = subprocess.run(rvpush_args(rvpush, tag, *args), env=child_env(),
-                           capture_output=True, text=True, timeout=RVPUSH_TIMEOUT_S)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=RVPUSH_TIMEOUT_S)
     except subprocess.TimeoutExpired:
         return 1, "rvpush timed out"
     return r.returncode, (r.stdout + r.stderr).strip()
@@ -492,18 +763,29 @@ def _eval(rvpush, tag, expr):
         return None
 
 
-def _launch_detached(args):
-    kw = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-              close_fds=True)
-    if os.name != "nt":
-        return subprocess.Popen(args, start_new_session=True, **kw)
-    flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+def _launch_detached(args, log_path=None):
+    out = subprocess.DEVNULL
+    if log_path:
+        try:
+            out = open(log_path, "ab")           # RV's stderr: ERROR / WARNING lines for checks
+            out.write(f"\n=== rv-review launch {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n".encode())
+            out.flush()
+        except OSError:
+            out = subprocess.DEVNULL
+    kw = dict(stdin=subprocess.DEVNULL, stdout=out, stderr=out, close_fds=True)
     try:
-        # leave the caller's job object too, or a tool runner that closes its job on exit
-        # takes RV down with it
-        return subprocess.Popen(args, creationflags=flags | CREATE_BREAKAWAY_FROM_JOB, **kw)
-    except OSError:                          # the job forbids breakaway: detach as far as allowed
-        return subprocess.Popen(args, creationflags=flags, **kw)
+        if os.name != "nt":
+            return subprocess.Popen(args, start_new_session=True, **kw)
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        try:
+            # leave the caller's job object too, or a tool runner that closes its job on exit
+            # takes RV down with it
+            return subprocess.Popen(args, creationflags=flags | CREATE_BREAKAWAY_FROM_JOB, **kw)
+        except OSError:                      # the job forbids breakaway: detach as far as allowed
+            return subprocess.Popen(args, creationflags=flags, **kw)
+    finally:
+        if out is not subprocess.DEVNULL:
+            out.close()                      # the child keeps its own handle
 
 
 def read_state(rvpush, tag):
@@ -511,73 +793,391 @@ def read_state(rvpush, tag):
     return parse_state(out) if code == 0 else None
 
 
-def _load(rv, rvpush, tag, tokens, latlong=False):
-    """Replace the contents of the tagged RV, or launch one. Returns (action, pid)."""
+def _load(rv, rvpush, tag, tokens, latlong=False, watch=None, expected=1):
+    """Replace the contents of the tagged RV, or launch one. Returns (action, pid).
+
+    After a launch, waits until RV reports `expected` sources (it adds them one by one)."""
     code, _ = _rvpush(rvpush, tag, "set", *tokens)
     if code == 0:
         time.sleep(SET_SETTLE_S)
         return "replaced", None
-    p = _launch_detached(launch_args(rv, tokens, tag, latlong))
+    log = own_log_path(tag)
+    if watch is not None:
+        watch.use(log)
+    p = _launch_detached(launch_args(rv, tokens, tag, latlong), log)
     start = time.monotonic()
     while True:
         c, out = _rvpush(rvpush, tag, "py-eval-return", "len(rv.commands.sources())")
         if c == 0 and out.isdigit() and int(out) > 0:     # answering and sources added
-            return "launched", p.pid
+            if int(out) >= expected or time.monotonic() - start > LAUNCH_TIMEOUT_S / 2:
+                return "launched", p.pid
         if p.poll() is not None or time.monotonic() - start > LAUNCH_TIMEOUT_S:
             raise RvError(
                 f"RV pid {p.pid} started but did not answer rvpush within {int(LAUNCH_TIMEOUT_S)} s "
                 f"(exited: {p.poll() is not None}). Check that RV networking is allowed (a "
                 f"firewall prompt may be waiting), that the sources open in RV by hand, and that "
-                f"no other RV uses tag '{tag}'; then run again.")
+                f"no other RV uses tag '{tag}'; then run again. RV's output: {log}")
         time.sleep(POLL_INTERVAL_S)
+
+
+SOURCE_NAMES_EXPR = ("(sorted(rv.commands.nodesOfType('RVFileSource')), "
+                     "rv.commands.nodesOfType('RVSession'))")
+REVIEW_KEYS = ("label", "title", "group", "view", "meta")
+SOURCE_REVIEW_EXPR = (
+    "[(s, rv.commands.getStringProperty(s + '.media.movie'), "
+    "[(rv.commands.getStringProperty(s + '.review.' + k) if rv.commands.propertyExists("
+    "s + '.review.' + k) else []) for k in ['label', 'title', 'group', 'view', 'meta']], "
+    "(rv.commands.getIntProperty(s + '.review.item') if rv.commands.propertyExists("
+    "s + '.review.item') else [])) for s in sorted(rv.commands.nodesOfType('RVFileSource'))]")
+SESSION_REVIEW_EXPR = (
+    "[[(rv.commands.getStringProperty(n + '.review.' + k) if rv.commands.propertyExists("
+    "n + '.review.' + k) else []) for k in ['title', 'layout', 'meta', 'groups']] "
+    "for n in rv.commands.nodesOfType('RVSession')]")
+ANNOTATED_EXPR = ("[(f, rv.commands.sourcesAtFrame(f), rv.extra_commands.sourceFrame(f)) "
+                  "for f in sorted(set(rv.extra_commands.findAnnotatedFrames()))]")
+PAINT_EXPR = ("[(n, [(p, rv.commands.getStringProperty(p)) for p in rv.commands.properties(n) "
+              "if p.endswith('.text') or p.endswith('.order')]) "
+              "for n in rv.commands.nodesOfType('RVPaint')]")
+
+
+def _first(v, default=""):
+    return v[0] if isinstance(v, (list, tuple)) and v else default
+
+
+def _json_or(text, default):
+    try:
+        v = json.loads(text)
+        return v if isinstance(v, type(default)) else default
+    except (TypeError, ValueError):
+        return default
+
+
+def items_from_rv(source_info, state=None, layout="sequence"):
+    """Items rebuilt from the review component on RV's sources (set by this script or by a
+    session written with rv_session.py); sources without it become one item each."""
+    items, by_index, source_items = [], {}, []
+    for k, (src, media, vals, item_no) in enumerate(source_info):
+        label, title, group, view, meta = [_first(v) for v in vals]
+        idx = _first(item_no, None)
+        key = idx if idx is not None else f"src{k}"
+        if key not in by_index:
+            files = list(media) if isinstance(media, (list, tuple)) else [media]
+            by_index[key] = len(items)
+            it = {"index": len(items), "path": files if len(files) > 1 else (files[0] if files else ""),
+                  "label": label or (Path(files[0]).name if files else src), "title": title,
+                  "meta": _json_or(meta, {}), "_sources": []}
+            if group:
+                it["group"] = group
+            if view:
+                it["view"] = view
+            items.append(it)
+        items[by_index[key]]["_sources"].append(src)
+        source_items.append(by_index[key])
+    ranges = item_ranges(state, source_items, len(items), layout)
+    for it, fr in zip(items, ranges):
+        it["frames"] = list(fr) if fr else None
+    return items, source_items
+
+
+def _paint_target(node):
+    """(source node, frame kind) for an RVPaint node: its source for per-source paint
+    ('source' frames), or None for view-level paint on a stack or layout ('global' frames)."""
+    m = re.match(r"^(sourceGroup\d+)_paint$", node) or re.match(r"^.+_p_(sourceGroup\d+)$", node)
+    return (m.group(1) + "_source", "source") if m else (None, "global")
+
+
+def build_notes(items, annotated, paint):
+    """Per-item notes from findAnnotatedFrames, sourcesAtFrame / sourceFrame and the RVPaint
+    properties (text:ID:FRAME:USER.text, frame:N.order)."""
+    src_item = {s: it for it in items for s in it.get("_sources", [])}
+    notes = {it["index"]: [] for it in items}
+
+    def note_for(it, frame=None, source_frame=None):
+        for n in notes[it["index"]]:
+            if (frame is not None and n["frame"] == frame) or \
+               (frame is None and source_frame is not None and n["source_frame"] == source_frame):
+                return n
+        first = (it.get("frames") or [None])[0]
+        n = {"frame": frame, "item_frame": (frame - first + 1) if frame and first else None,
+             "source_frame": source_frame, "texts": [], "strokes": 0, "image": None}
+        notes[it["index"]].append(n)
+        return n
+
+    for f, srcs, sf in annotated or []:
+        if len(srcs or []) != 1:        # stack / tile: the paint data says which source
+            continue
+        it = src_item.get(srcs[0])
+        if it is not None:
+            note_for(it, f, sf)
+    for node, props in paint or []:
+        values = {p: v for p, v in props}
+        src, kind = _paint_target(node)
+        for p, order in props:
+            m = re.match(r"^.*\.frame:(-?\d+)\.order$", p)
+            if not m or not order:
+                continue
+            fnum = int(m.group(1))
+            texts = [_first(values.get(f"{node}.{c}.text")) for c in order if c.startswith("text:")]
+            texts = [t for t in texts if t]
+            strokes = sum(1 for c in order if c.startswith("pen:"))
+            if kind == "source":
+                it = src_item.get(src)
+                if it is None:
+                    continue
+                n = next((x for x in notes[it["index"]] if x["source_frame"] == fnum), None) \
+                    or note_for(it, None, fnum)
+                targets = [n]
+            else:
+                it = item_at_frame(items, fnum)
+                targets = [note_for(it, fnum, None)] if it else []
+            for n in targets:
+                n["texts"] += [t for t in texts if t not in n["texts"]]
+                n["strokes"] += strokes
+    for v in notes.values():
+        v.sort(key=lambda n: (n["frame"] is None, n["frame"] or 0, n["source_frame"] or 0))
+    return notes
+
+
+def export_annotated(rv, rvpush, tag, frames, folder):
+    """Render the annotated frames through rvio from a copy of the live session, the way
+    RV's File > Export > Annotated Frames does. Returns (images by frame, command, problems)."""
+    folder = Path(folder).resolve()
+    folder.mkdir(parents=True, exist_ok=True)
+    session = folder / "annotated_session.rv"
+    _rvpush(rvpush, tag, "py-eval-return",
+            f"rv.commands.saveSession({str(session).replace(chr(92), '/')!r}, True)")
+    if not session.is_file():
+        return {}, None, [f"RV did not save {session}; check that the folder is writable"]
+    rvio = Path(rv).parent / ("rvio.exe" if os.name == "nt" else "rvio")
+    if not rvio.is_file():
+        return {}, None, [f"rvio not found next to {rv}; the annotated session is at {session}"]
+    cmd = [str(rvio), str(session), "-o", str(folder / "annotated.#.png"),
+           "-t", ",".join(str(f) for f in frames)]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    errors, _ = parse_log(r.stdout + r.stderr)
+    images = {}
+    for f in frames:
+        hits = sorted(folder.glob(f"annotated.*{f}.png"))
+        hit = next((h for h in hits if re.search(rf"\.0*{f}\.png$", h.name)), None)
+        if hit:
+            images[f] = str(hit)
+    if r.returncode != 0 and not errors:
+        errors = [f"rvio exited {r.returncode}"]
+    return images, cmd, errors
+
+
+def read_notes(rv, rvpush, tag, export_dir=None):
+    state = read_state(rvpush, tag)
+    if state is None:
+        raise RvError(f"no RV with tag '{tag}' answered. Load the review with this script "
+                      f"first, or pass the --tag the review window was started with.")
+    info = _eval(rvpush, tag, SOURCE_REVIEW_EXPR) or []
+    sess = _eval(rvpush, tag, SESSION_REVIEW_EXPR) or []
+    title, layout, meta, groups = [_first(v) for v in (sess[0] if sess else [[]] * 4)]
+    layout = layout or ("sequence" if state["viewNodeType"] == "RVSequenceGroup" else "stack")
+    items, _ = items_from_rv(info, state, "sequence" if layout == "sequence" else layout)
+    annotated = _eval(rvpush, tag, ANNOTATED_EXPR) or []
+    paint = _eval(rvpush, tag, PAINT_EXPR) or []
+    notes = build_notes(items, annotated, paint)
+    frames = sorted({n["frame"] for v in notes.values() for n in v if n["frame"]})
+    export, problems = None, []
+    if export_dir and frames:
+        images, cmd, problems = export_annotated(rv, rvpush, tag, frames, export_dir)
+        for v in notes.values():
+            for n in v:
+                n["image"] = images.get(n["frame"])
+        export = {"folder": str(Path(export_dir).resolve()), "command": cmd,
+                  "session": str(Path(export_dir).resolve() / "annotated_session.rv")}
+    out_items = []
+    for it in items:
+        d = _public_item(it, it.get("_sources", []), it.get("frames"))
+        d["notes"] = notes[it["index"]]
+        out_items.append(d)
+    return {"action": "notes", "tag": tag, "title": title, "meta": _json_or(meta, {}),
+            "groups": group_ranges(_json_or(groups, []), items),
+            "items": out_items, "annotated_frames": frames, "marks": state["marks"],
+            "export": export, "state": state, "problems": problems}
+
+
+def _wait_edl(rvpush, tag, n_sources, timeout=10.0):
+    """The sequence EDL once it holds every source (n_sources starts plus the end entry)."""
+    start, edl = time.monotonic(), []
+    while True:
+        edl = _eval(rvpush, tag, f"rv.commands.getIntProperty('{SEQ_EDL}')") or []
+        if len(edl) >= n_sources + 1 or time.monotonic() - start > timeout:
+            return list(edl)
+        time.sleep(POLL_INTERVAL_S)
+
+
+def _session_post_commands():
+    """After opening a .rv: keep its view, marks and layout; only stop on the first frame."""
+    return "rv.commands.stop(); rv.commands.setFrame(rv.commands.frameStart())"
 
 
 def review(tokens, rv, rvpush, tag=DEFAULT_TAG, marks="auto", compare="sequence", fps=None,
            views=None, stereo=None, stereo_views=None, swap_eyes=False, latlong=False,
-           info_strip=False):
+           info_strip=False, manifest=None, save_session=None):
+    """Load, set up, read back and verify. manifest: a normalised review manifest whose items
+    match tokens one to one (None builds items from the tokens)."""
     groups = group_sources(tokens)
-    action, pid = _load(rv, rvpush, tag, tokens, latlong)
+    session_file = next((f for g in groups for f in _group_files(g)
+                         if f.lower().endswith(".rv")), None)
+    if session_file and len(groups) > 1:
+        raise RvError("a .rv session must be the only source; open it on its own.")
+    if manifest is None:
+        manifest = {"schema_version": rm.SCHEMA_VERSION, "title": "", "meta": {}, "groups": [],
+                    "items": items_from_tokens(tokens), "layout": compare, "marks": "auto"}
+    items = manifest["items"]
+    watch = LogWatch(tag)
+    n_expected = (rv_session.summarise(session_file) or {}).get("sources", 1) if session_file \
+        else len(groups)
+    action, pid = _load(rv, rvpush, tag, tokens, latlong, watch, max(1, n_expected))
     view_assign = None
-    if views:
+    source_items = list(range(len(groups)))
+    if views and not session_file:
         infos = _eval(rvpush, tag, SOURCES_EXPR) or []
         source_views = [v for _, _, v in infos]
         if views != "all" and len(views) == 1:           # show one view, do not expand
             view_assign = [views[0] if views[0] in v else None for v in source_views]
         else:
             new_tokens, view_assign = expand_views(groups, source_views, views)
+            source_items = []
+            for gi, v in enumerate(source_views):
+                pick = list(v) if views == "all" else [x for x in views if x in v]
+                source_items += [gi] * (len(pick) if len(v) > 1 and pick else 1)
             if len(view_assign) != len(groups):
                 _rvpush(rvpush, tag, "set", *new_tokens)
                 time.sleep(SET_SETTLE_S)
                 groups = group_sources(new_tokens)
-    if marks == "auto":
-        marks = []
-        if compare == "sequence":
-            edl = _eval(rvpush, tag, f"rv.commands.getIntProperty('{SEQ_EDL}')") or []
-            marks = auto_marks(list(edl))
-    if fps is None and all(is_still(f) for g in groups for f in _group_files(g)):
-        fps = STILL_FPS
-    expected = {"sources": len(groups), "marks": marks}
-    if latlong:
-        expected["viewNodeType"] = "LatLongViewer"
-    elif compare in VIEW_NODE_TYPES:
-        expected["viewNodeType"] = VIEW_NODE_TYPES[compare]
-    expected["stereo"] = stereo or "off"
+    expected = {}
+    if session_file:
+        summary = rv_session.summarise(session_file) or {}
+        if "sources" in summary:
+            expected["sources"] = summary["sources"]
+        if summary.get("marks"):
+            expected["marks"] = summary["marks"]
+        marks = summary.get("marks", [])
+    else:
+        if marks == "auto":
+            marks = []
+            if compare == "sequence":
+                edl = _wait_edl(rvpush, tag, len(groups))
+                if manifest.get("groups") and manifest.get("marks", "auto") in ("auto", "groups") \
+                        and len(groups) == len(items):
+                    starts = list(edl)[:-1]
+                    if len(starts) < len(items):         # EDL not complete: stills are 1 frame
+                        starts = [a for a, _ in (rv_session.offline_item_ranges(items) or [])]
+                    marks = rm.group_starts(items, [(s, s) for s in starts[:len(items)]]) \
+                        if len(starts) >= len(items) else auto_marks(list(edl))
+                elif manifest.get("marks") != "none":
+                    marks = auto_marks(list(edl))
+        if fps is None and all(is_still(f) for g in groups for f in _group_files(g)):
+            fps = STILL_FPS
+        expected = {"sources": len(groups), "marks": marks}
+        if latlong:
+            expected["viewNodeType"] = "LatLongViewer"
+        elif compare in VIEW_NODE_TYPES:
+            expected["viewNodeType"] = VIEW_NODE_TYPES[compare]
+        expected["stereo"] = stereo or "off"
     state, problems = None, []
     for attempt in range(2):                 # post commands, read back, one retry on mismatch
-        add_latlong = latlong and (state is None or state["viewNodeType"] != "LatLongViewer")
-        _rvpush(rvpush, tag, "py-exec", post_commands(
-            compare, marks, fps, stereo, stereo_views, swap_eyes, view_assign, add_latlong,
-            info_strip))
+        if session_file:
+            _rvpush(rvpush, tag, "py-exec", _session_post_commands())
+        else:
+            add_latlong = latlong and (state is None or state["viewNodeType"] != "LatLongViewer")
+            _rvpush(rvpush, tag, "py-exec", post_commands(
+                compare, marks, fps, stereo, stereo_views, swap_eyes, view_assign, add_latlong,
+                info_strip))
         state = read_state(rvpush, tag)
         problems = check_state(state, expected)
         if not problems:
             break
         time.sleep(SET_SETTLE_S)
-    return {"action": action, "pid": pid, "tag": tag, "sources": len(groups), "marks": list(marks),
-            "views": view_assign, "state": state, "problems": problems, "ok": not problems}
+    if session_file:
+        info = _eval(rvpush, tag, SOURCE_REVIEW_EXPR) or []
+        sess = _eval(rvpush, tag, SESSION_REVIEW_EXPR) or []
+        title, layout, meta, groups_json = [_first(v) for v in (sess[0] if sess else [[]] * 4)]
+        seq = (state or {}).get("viewNodeType") == "RVSequenceGroup"
+        rv_items, _ = items_from_rv(info, state, "sequence" if seq else "stack")
+        manifest = {"title": title, "meta": _json_or(meta, {}), "groups": _json_or(groups_json, [])}
+        out_items = [_public_item(it, it["_sources"], it["frames"]) for it in rv_items]
+    else:
+        names = _eval(rvpush, tag, SOURCE_NAMES_EXPR) or ([], [])
+        src_names, sess_nodes = names[0], names[1]
+        for cmd in review_props_commands(src_names, source_items, items,
+                                         sess_nodes[0] if sess_nodes else None, manifest) +                 annotation_commands(src_names, source_items, items):
+            _rvpush(rvpush, tag, "py-exec", cmd)
+        layout = "sequence" if compare == "sequence" and not latlong else compare
+        ranges = item_ranges(state, source_items, len(items), layout)
+        by_item = {}
+        for s, i in zip(src_names, source_items):
+            by_item.setdefault(i, []).append(s)
+        out_items = [_public_item(it, by_item.get(it["index"], []), fr)
+                     for it, fr in zip(items, ranges)]
+    time.sleep(SET_SETTLE_S)                 # RV flushes its log lines a moment later
+    errors, warnings = parse_log(watch.new_text())
+    if errors:
+        problems = problems + [f"RV logged {len(errors)} error(s) during the load; see 'errors'"]
+    session_out = None
+    if save_session and not session_file:
+        sess_items = []
+        for i, it in enumerate(items):
+            srcs = [k for k, x in enumerate(source_items) if x == i]
+            views_here = [view_assign[k] for k in srcs] if view_assign else [None] * len(srcs)
+            for v in views_here or [None]:
+                d = {k: val for k, val in it.items() if not k.startswith("_")}
+                if v:
+                    d["view"] = v
+                d["index"] = len(sess_items)
+                sess_items.append(d)
+        sm = dict(manifest, items=sess_items, layout=compare if compare in rm.LAYOUTS else "sequence")
+        if stereo:
+            sm["stereo"] = stereo
+        path = rv_session.write(sm, save_session, marks=list(marks), fps=fps)
+        session_out = str(Path(path).resolve())
+        sp = rv_session.structural_problems(Path(path).read_text(encoding="utf-8"))
+        problems += [f"saved session: {p}" for p in sp]
+    elif session_file:
+        session_out = str(Path(session_file).resolve())
+    n_sources = (state or {}).get("sources", len(groups)) if session_file else len(groups)
+    return {"action": action, "pid": pid, "tag": tag, "sources": n_sources, "marks": list(marks),
+            "views": view_assign, "title": manifest.get("title", ""),
+            "meta": manifest.get("meta", {}),
+            "items": out_items, "groups": group_ranges(manifest.get("groups", []),
+                                                         [dict(o) for o in out_items]),
+            "session": session_out, "state": state, "problems": problems,
+            "errors": errors, "warnings": warnings, "log": watch.sources(), "ok": not problems}
 
 
 # --- command line -----------------------------------------------------------------------
+
+RESULT_SCHEMA = "rv-review.result"
+RESULT_VERSION = 1
+EXIT_OK, EXIT_ERROR, EXIT_USAGE, EXIT_MISMATCH = 0, 1, 2, 3
+
+
+def envelope(body=None, exit_code=EXIT_OK, error=None):
+    """Every JSON line this script prints: schema, version, ok, exit_code, then the body."""
+    out = {"schema": RESULT_SCHEMA, "schema_version": RESULT_VERSION,
+           "ok": exit_code == EXIT_OK, "exit_code": exit_code}
+    out.update(body or {})
+    # the envelope's own keys always win over anything in the body
+    out.update({"schema": RESULT_SCHEMA, "schema_version": RESULT_VERSION,
+                "ok": exit_code == EXIT_OK, "exit_code": exit_code})
+    if error:
+        out["error"] = error
+    return out
+
+
+class JsonArgumentParser(argparse.ArgumentParser):
+    """Bad arguments print a JSON error line on stdout (exit 2) as well as the usage."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(json.dumps(envelope({"action": "error"}, EXIT_USAGE,
+                                  f"{self.prog}: {message}")))
+        sys.exit(EXIT_USAGE)
+
 
 def _pair(text):
     parts = [p.strip() for p in text.split(",") if p.strip()]
@@ -596,28 +1196,35 @@ def _views(text):
 
 
 def build_parser():
-    ap = argparse.ArgumentParser(
+    ap = JsonArgumentParser(
         prog="rv_review.py", description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="examples:\n"
                "  python rv_review.py --frames-json review/rv_frames/frames.json\n"
+               "  python rv_review.py --manifest review.json --save-session review.rv\n"
+               "  python rv_review.py review.rv\n"
                "  python rv_review.py before.png after.png v2.png\n"
                "  python rv_review.py shot_v1.mov shot_v2.mov --compare wipe\n"
                "  python rv_review.py 'plates/shot.1001-1100#.exr' 'renders/shot.#.exr'\n"
                "  python rv_review.py views.exr --views all\n"
                "  python rv_review.py --stereo pair -- [ left.exr right.exr ]\n"
                "  python rv_review.py pano_latlong.exr --latlong\n"
+               "  python rv_review.py --notes --export-annotated review/notes\n"
                "  python rv_review.py --state")
     ap.add_argument("sources", nargs="*", metavar="SOURCE",
-                    help="stills, movies, sequence specs or [ ... ] groups, in viewing order")
+                    help="stills, movies, sequence specs, [ ... ] groups or one .rv session, "
+                         "in viewing order")
     ap.add_argument("--frames-json", metavar="FILE",
-                    help="frames.json from 'sheet_panels.py split': its frames in order, with a "
-                         "mark at the first frame of every view")
+                    help="frames.json from 'sheet_panels.py split' (or compare_dirs.py / "
+                         "review_set.py): its frames in order, with a mark at every view")
+    ap.add_argument("--manifest", metavar="FILE|-",
+                    help="review manifest JSON (see references/integration.md), or - for stdin; "
+                         "labels and meta come back in the result and in --notes")
     ap.add_argument("--marks", default="auto", metavar="auto|none|N,N",
                     help="timeline marks (default auto: see above)")
-    ap.add_argument("--compare", choices=COMPARE_MODES, default="sequence",
-                    help="layout: sources back to back (default), wipe / difference / over / "
-                         "replace of the first two, or tile")
+    ap.add_argument("--compare", choices=COMPARE_MODES, default=None,
+                    help="layout: sources back to back (default), wipe / difference / "
+                         "difference-inverted / over / replace of the first two, or tile")
     ap.add_argument("--fps", type=float, help="playback rate (default: 1 for stills, else the media's)")
     ap.add_argument("--views", type=_views, metavar="all|NAME[,NAME...]",
                     help="multi-view files: one name shows that view; several names or 'all' "
@@ -630,6 +1237,14 @@ def build_parser():
     ap.add_argument("--latlong", action="store_true",
                     help="view lat-long (equirectangular) images through RV's 360 viewer; "
                          "Shift+drag to look around")
+    ap.add_argument("--save-session", metavar="FILE.rv",
+                    help="after loading, write an RV session of the review (labels and meta "
+                         "included) that reopens with 'rv FILE.rv' or renders with rvio")
+    ap.add_argument("--notes", action="store_true",
+                    help="load nothing; print the reviewer's annotations per item (frames, "
+                         "text, stroke counts) with each item's label and meta")
+    ap.add_argument("--export-annotated", metavar="DIR",
+                    help="with --notes: also render every annotated frame to DIR through rvio")
     ap.add_argument("--tag", default=DEFAULT_TAG,
                     help=f"RV network tag of the review window (default: {DEFAULT_TAG})")
     ap.add_argument("--rv-bin", metavar="DIR",
@@ -637,37 +1252,70 @@ def build_parser():
     ap.add_argument("--info-strip", action="store_true",
                     help="turn on RV's info strip (F7); RV then saves it as on in its preferences")
     ap.add_argument("--state", action="store_true",
-                    help="load nothing; print the review window's state as JSON")
+                    help="load nothing; print the review window's state and item mapping")
     return ap
+
+
+def _state_body(rvpush, tag):
+    state = read_state(rvpush, tag)
+    if state is None:
+        raise RvError(f"no RV with tag '{tag}' answered. Load sources with this script "
+                      f"first, or pass the --tag the review window was started with.")
+    info = _eval(rvpush, tag, SOURCE_REVIEW_EXPR) or []
+    seq = state["viewNodeType"] == "RVSequenceGroup"
+    items, _ = items_from_rv(info, state, "sequence" if seq else "stack")
+    return {"action": "state", "tag": tag, "state": state,
+            "items": [_public_item(it, it["_sources"], it["frames"]) for it in items]}
 
 
 def main(argv=None):
     a = build_parser().parse_args(argv)
     try:
+        if a.export_annotated and not a.notes:
+            raise RvError("--export-annotated goes with --notes.")
         rv, rvpush = find_rv(a.rv_bin)
         if a.state:
-            state = read_state(rvpush, a.tag)
-            if state is None:
-                raise RvError(f"no RV with tag '{a.tag}' answered. Load sources with this script "
-                              f"first, or pass the --tag the review window was started with.")
-            print(json.dumps(state))
-            return 0
+            print(json.dumps(envelope(_state_body(rvpush, a.tag))))
+            return EXIT_OK
+        if a.notes:
+            body = read_notes(rv, rvpush, a.tag, a.export_annotated)
+            code = EXIT_MISMATCH if body["problems"] else EXIT_OK
+            print(json.dumps(envelope(body, code)))
+            return code
         tokens, marks = list(a.sources), parse_marks(a.marks)
-        if a.frames_json:
-            frames, view_marks = load_frames_json(a.frames_json)
-            tokens = frames + tokens
+        manifest = None
+        if a.manifest or a.frames_json:
+            if a.manifest and a.frames_json:
+                raise RvError("pass --manifest or --frames-json, not both.")
+            if a.frames_json and not Path(a.frames_json).is_file():
+                load_frames_json(a.frames_json)            # raises the helpful message
+            try:
+                manifest = rm.load(a.manifest or a.frames_json)
+            except rm.ManifestError as e:
+                raise RvError("manifest problems: " + "; ".join(e.problems)) from None
+            if tokens:
+                raise RvError("sources on the command line cannot be mixed with a manifest; "
+                              "add them to the manifest's items.")
+            tokens = manifest_tokens(manifest)
             if marks == "auto":
-                marks = view_marks
+                mm = manifest.get("marks", "auto")
+                marks = mm if isinstance(mm, list) else ([] if mm == "none" else "auto")
         if not tokens:
-            raise RvError("no sources given. Pass stills, movies or sequences in viewing order, "
-                          "or --frames-json DIR/frames.json; see --help.")
-        result = review(resolve_sources(tokens), rv, rvpush, a.tag, marks, a.compare, a.fps,
-                        a.views, a.stereo, a.stereo_views, a.swap_eyes, a.latlong, a.info_strip)
+            raise RvError("no sources given. Pass stills, movies, sequences or a .rv session in "
+                          "viewing order, or --manifest / --frames-json; see --help.")
+        compare = a.compare or (manifest or {}).get("layout", "sequence")
+        stereo = a.stereo or ((manifest or {}).get("stereo") if (manifest or {}).get("stereo") != "off" else None)
+        fps = a.fps if a.fps is not None else (manifest or {}).get("fps")
+        result = review(resolve_sources(tokens), rv, rvpush, a.tag, marks, compare, fps,
+                        a.views, stereo, a.stereo_views, a.swap_eyes, a.latlong, a.info_strip,
+                        manifest, a.save_session)
     except RvError as e:
         print(f"rv_review: {e}", file=sys.stderr)
-        return 1
-    print(json.dumps(result))
-    return 0 if result["ok"] else 3
+        print(json.dumps(envelope({"action": "error"}, EXIT_ERROR, str(e))))
+        return EXIT_ERROR
+    code = EXIT_OK if result["ok"] else EXIT_MISMATCH
+    print(json.dumps(envelope(result, code)))
+    return code
 
 
 if __name__ == "__main__":

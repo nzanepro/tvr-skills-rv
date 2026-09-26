@@ -1,30 +1,41 @@
-"""Shared fixtures for the sheet_panels tests.
+"""Shared fixtures for the rv-review tests.
 
-sheet_panels.py is a standalone script (not part of an installed package), so it
-is loaded by file path with importlib rather than a normal import.
+The scripts are standalone files (not an installed package), so each is loaded by file path
+with importlib. The scripts folder is also put on sys.path, because several scripts import
+their neighbours (compare_dirs imports sheet_panels, rv_review imports review_manifest and
+rv_session, and so on).
 """
 import importlib.util
+import os
+import shutil
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SCRIPT_PATH = REPO_ROOT / "rv-review" / "scripts" / "sheet_panels.py"
-RV_REVIEW_SCRIPT_PATH = REPO_ROOT / "rv-review" / "scripts" / "rv_review.py"
+SCRIPTS = REPO_ROOT / "rv-review" / "scripts"
+SCRIPT_PATH = SCRIPTS / "sheet_panels.py"
+RV_REVIEW_SCRIPT_PATH = SCRIPTS / "rv_review.py"
+
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+
+def load_script(name):
+    """A fresh import of rv-review/scripts/<name>.py."""
+    spec = importlib.util.spec_from_file_location(name, SCRIPTS / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _load_sheet_panels():
-    spec = importlib.util.spec_from_file_location("sheet_panels", SCRIPT_PATH)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_script("sheet_panels")
 
 
 def _load_rv_review():
-    spec = importlib.util.spec_from_file_location("rv_review", RV_REVIEW_SCRIPT_PATH)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_script("rv_review")
 
 
 @pytest.fixture()
@@ -37,3 +48,67 @@ def sp():
 def rr():
     """A fresh import of rv_review.py for each test."""
     return _load_rv_review()
+
+
+@pytest.fixture()
+def rm():
+    """A fresh import of review_manifest.py."""
+    return load_script("review_manifest")
+
+
+@pytest.fixture()
+def rs():
+    """A fresh import of rv_session.py."""
+    return load_script("rv_session")
+
+
+@pytest.fixture()
+def cd():
+    """A fresh import of compare_dirs.py."""
+    return load_script("compare_dirs")
+
+
+@pytest.fixture()
+def rset():
+    """A fresh import of review_set.py."""
+    return load_script("review_set")
+
+
+@pytest.fixture()
+def rz():
+    """A fresh import of rasterize.py."""
+    return load_script("rasterize")
+
+
+@pytest.fixture()
+def wc():
+    """A fresh import of web_capture.py."""
+    return load_script("web_capture")
+
+
+@pytest.fixture()
+def ac():
+    """A fresh import of app_capture.py."""
+    return load_script("app_capture")
+
+
+def find_rv_bin():
+    """Folder holding rv / gtoinfo / rvio when RV is installed (RV_BIN, PATH), else None.
+    Real-tool tests skip without it; they never open an RV window."""
+    for cand in (os.environ.get("RV_BIN"), os.path.dirname(shutil.which("rv") or "") or None):
+        if cand and Path(cand).is_dir():
+            return Path(cand)
+    try:
+        rr = _load_rv_review()
+        rv, _ = rr.find_rv()
+        return rv.parent
+    except Exception:
+        return None
+
+
+@pytest.fixture()
+def rv_bin():
+    b = find_rv_bin()
+    if b is None:
+        pytest.skip("RV / OpenRV not installed")
+    return b

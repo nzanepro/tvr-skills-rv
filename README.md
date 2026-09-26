@@ -13,11 +13,13 @@ Companion skills drive RV's command-line tools: rvio, rvls and rvpkg.
 *A synthetic lighting-pass sheet (left) becomes one RV frame per version (right). Left / Right
 flips versions in place; the timeline marks jump between views.*
 
+![Animated demo: a synthetic before / after / v2 lighting-pass sheet is split into RV frames, then flipped through in a mocked-up RV review window with labels and a moving timeline playhead, ending on the skill's verified JSON result](docs/images/rv-flipbook-demo.gif)
+
 ## Skills
 
 | Skill | What it does |
 |---|---|
-| [`rv-review`](rv-review/SKILL.md) | Loads stills, stacked comparison sheets, movies, image sequences, multi-view / stereo EXRs and 360 lat-long images into one RV review window, and verifies the load |
+| [`rv-review`](rv-review/SKILL.md) | Loads stills, sheets, movies, sequences, multi-view / stereo EXRs and 360 images into one RV window and verifies the load; compares baseline and candidate folders, UI / app / web screenshots and SVGs with difference frames; saves .rv sessions; returns reviewers' notes as JSON |
 | [`rvio`](rvio/SKILL.md) | Convert image sequences to movies and back with rvio: EXR / OpenEXR, DPX, TIFF, PNG, JPEG, MOV / MP4; resize, crop, frame ranges, fps, audio, colour (sRGB, log, ACES, LUTs, baked OCIO), slates, frame burn-ins, watermarks |
 | [`rvls`](rvls/SKILL.md) | List image sequences and find missing frames with rvls: frame ranges, gaps, resolution, bit depth, codec, timecode and full file headers; checks that a render or conversion is complete |
 | [`rvpkg`](rvpkg/SKILL.md) | Install, uninstall and opt in to RV packages (.rvpkg plugins) with rvpkg; list what is installed and loaded, and set up support areas |
@@ -40,6 +42,9 @@ The rest of this README describes `rv-review`.
   instead of opening another one.
 - **Verified.** The launcher reads RV's state back (sources, frames, marks, view, stereo mode)
   and reports any difference instead of assuming the load worked.
+- **Baseline vs candidate.** Compares two folders (or a test tool's failures) and shows only what changed: baseline, candidate and an absolute-difference frame per pair, most changed first.
+- **UI, apps and the web.** Captures pages at breakpoints and app screens in light / dark, text sizes and locales, rasterises SVGs, and flips one screen through its variants.
+- **Sessions and notes.** Saves the review as an .rv session (reopen it, or render it with rvio) and reads the reviewer's annotations back per item.
 
 **Use it for:** render review and look-dev in VFX, animation and games; lighting and
 compositing versions; playblasts and turntables; A/B compare with wipe or difference;
@@ -65,6 +70,7 @@ so it works with OpenRV and with Autodesk RV / ShotGrid RV.
 | RV or OpenRV with `rv` and `rvpush` (see [See also](#see-also) for building OpenRV) | `rv -help` (Windows: `rv.exe -help`) |
 | Python 3.10 or later | `python --version` |
 | numpy and Pillow, for splitting sheets | `python -c "import numpy, PIL"` |
+| Optional: Playwright or Chrome / Edge (web capture, SVG); resvg, rsvg-convert, CairoSVG or Inkscape (SVG); Xcode simctl or adb (mobile) | detected at run time; nothing is installed |
 | A local desktop session (RV opens a window) | |
 
 The launcher itself uses only the Python standard library and runs on Windows, macOS and Linux.
@@ -135,6 +141,10 @@ Ask in plain words; RV does not have to be named:
 - "Load `plates/shot010.1001-1100#.exr` and the comp after it."
 - "Show me every view of `cams.exr`, then the left / centre pair side by side."
 - "Put the lat-long render up so I can look around."
+- "The Playwright screenshot tests failed; show me what changed."
+- "Flip the login screen through light, dark and the largest text size."
+- "Compare the old and new icon SVGs."
+- "Pull the notes the reviewer drew in RV."
 
 Or call it directly: `/rv-review` (personal or project install) or `/rv:rv-review` (plugin). If
 it does not trigger on its own, ask for the rv-review skill by name.
@@ -180,6 +190,23 @@ Running the command again with other sheets replaces the window's contents
 (`"action": "replaced"`).
 
 </details>
+
+## Compare screenshots, web pages and test failures
+
+```bash
+python rv-review/scripts/compare_dirs.py shots/baseline shots/candidate --out review/compare
+python rv-review/scripts/compare_dirs.py --adapter playwright . --out review/visual
+python rv-review/scripts/web_capture.py http://localhost:3000/ --version after --out caps
+python rv-review/scripts/review_set.py caps --out review/versions
+python rv-review/scripts/rasterize.py icons/*.svg --out review/icons --scale 4
+python rv-review/scripts/rv_review.py --frames-json review/compare/frames.json
+```
+
+Adapters: Playwright, jest-image-snapshot, Unity Graphics Test Framework, Unreal automation reports, Flutter goldens. Optional tools (Playwright, Chrome / Edge, resvg, CairoSVG, Inkscape, Xcode simctl, adb) are detected, never installed. Details: [`compare-dirs.md`](rv-review/references/compare-dirs.md), [`ui-app-web.md`](rv-review/references/ui-app-web.md).
+
+## Using rv-review from other skills
+
+A production-tracker skill (Flow Production Tracking, ftrack, Kitsu, an issue tracker) or a CI job can use rv-review as its viewer: write a review manifest (JSON, `schema_version` 1) with the media in order and the tracker's ids in `meta`, run `rv_review.py --manifest review.json --save-session review.rv`, and after the review `rv_review.py --notes --export-annotated notes/`, which returns each item's annotations and rendered frames with its `meta`, ready to post back. Every run prints one JSON line with documented exit codes; rv-review never talks to the tracker and needs no credentials. Contract, schemas and a worked example: [`integration.md`](rv-review/references/integration.md). Autodesk RV's built-in Flow integration is an alternative where it is licensed; this route works with OpenRV and any tracker.
 
 ## Using the scripts without an agent
 
@@ -237,6 +264,10 @@ Images: [`docs/images/rv-flipbook.png`](docs/images/rv-flipbook.png) is the READ
 social preview image (repository Settings > Social preview). Both are made from synthetic
 renders only.
 
+## Updating
+
+**Plugin marketplace install**: update the marketplace from the `/plugin` panel (or `/plugin marketplace update tvr-skills-rv`), then reinstall if a skill's version changed. **Personal, linked or project skill (a clone)**: `git pull` in the clone; a linked skill folder picks the change up automatically, a copied one needs a fresh copy. To hear about new releases, use GitHub's Watch > Custom > Releases on this repository.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).
@@ -269,6 +300,13 @@ Install one or all of them like `rv-review`, e.g.
   installed yet.
 - [OpenRV](https://github.com/AcademySoftwareFoundation/OpenRV) and its
   [documentation](https://aswf-openrv.readthedocs.io/).
+
+## Support
+
+These skills are free and MIT-licensed. If they save you time, you can support the work at
+[buymeacoffee.com/trespassvr](https://buymeacoffee.com/trespassvr).
+
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-support-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/trespassvr)
 
 ## License
 
