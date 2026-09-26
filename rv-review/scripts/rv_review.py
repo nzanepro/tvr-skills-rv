@@ -10,7 +10,8 @@ are replaced in place with "rvpush set"; otherwise a new RV is launched detached
 networking on, so it outlives this script and the shell that ran it. The script then sets
 the layout (sequence, wipe, difference, over, tile), stereo mode, multi-view selection and
 360 view, stops playback on the first frame, adds timeline marks, and reads the state back
-to check the load.
+to check the load. A wipe opens split down the middle: the first source on the left, the
+second on the right.
 
 Defaults: sequence layout; 1 fps when every source is a still (Space = one image per
 second), otherwise the media's own rate; marks at the first frame of every view in
@@ -37,6 +38,8 @@ items with labels, groups, in / out, fps, views and a free-form "meta" object th
 untouched in the result and in --notes. A .rv session file given as the only source is opened
 as it is. --save-session writes a .rv of what was loaded. --notes reads the reviewer's
 annotations back per item; --export-annotated renders the annotated frames through rvio.
+--selftest sends Left / Right / Alt+Left / Alt+Right to the review window through RV's event
+tables and checks the frame moves as documented (no keyboard focus or permission needed).
 
 Output: exactly one JSON line on stdout, also for errors (schema "rv-review.result",
 schema_version 1), for example
@@ -44,7 +47,8 @@ schema_version 1), for example
    "action": "launched", "pid": 1234, "tag": "rv-review", "sources": 2, "marks": [1, 13],
    "items": [{"index": 0, "label": "v1", "frames": [1, 12], "sources": [...], "meta": {}}, ...],
    "state": {...}, "problems": [], "errors": [], "warnings": [], ...}
-"ok" is true when the state read back from RV matches what was loaded and RV logged no
+"ok" is true when the state read back from RV (sources, frames, marks, view, stereo and, for
+stacks, the composite, wipes mode and wipe edge) matches what was loaded and RV logged no
 ERROR lines during the load; "problems" lists any difference, "errors" / "warnings" the
 lines RV logged. Every item carries its global frame range, so a frame maps back to its item
 and meta. The full schema is in references/integration.md.
@@ -84,11 +88,36 @@ COMPARE_MODES = ("sequence", "wipe", "difference", "difference-inverted", "over"
 STEREO_MODES = ("off", "anaglyph", "lumanaglyph", "pair", "mirror", "hsqueezed", "vsqueezed",
                 "checker", "scanline", "left", "right", "hardware")   # RVDisplayStereo stereo.type
 SEQ_EDL = "defaultSequence_sequence.edl.frame"     # global start frame of every source, plus end
+WIPE_BOX = (0.0, 0.5, 0.0, 1.0)   # visible part of the top source in a wipe: its left half
+FULL_BOX = (0.0, 1.0, 0.0, 1.0)
+BOX_TOLERANCE = 1e-3
+
+
+def stack_transforms_expr(stack):
+    """Python (inside RV) for the RVTransform2D of every input of the stack group `stack` (an
+    expression string), top input first. RV draws a wipe by limiting a transform's
+    stencil.visibleBox ([x0, x1, y0, y1], 0-1 of the image), as the wipes mode (wipes.mu)
+    does when the edge is dragged; the group names them <stack>_t_<input>, and the transforms
+    closest to the view are the fallback."""
+    return ("([n for n in [" + stack + " + '_t_' + i for i in rv.commands.nodeConnections("
+            + stack + ", False)[0]] if rv.commands.propertyExists(n + '.stencil.visibleBox')] or "
+            "[m['node'] for m in rv.commands.metaEvaluateClosestByType(rv.commands.frame(), "
+            "'RVTransform2D')])")
+
+
 STATE_EXPR = ("(rv.commands.frame(), rv.commands.frameStart(), rv.commands.frameEnd(), "
               "rv.commands.markedFrames(), rv.commands.getIntProperty('" + SEQ_EDL + "'), "
               "len(rv.commands.nodesOfType('RVFileSource')), rv.commands.viewNode(), "
               "rv.commands.nodeType(rv.commands.viewNode()), "
-              "rv.commands.getStringProperty('@RVDisplayStereo.stereo.type'), rv.commands.fps())")
+              "rv.commands.getStringProperty('@RVDisplayStereo.stereo.type'), rv.commands.fps(), "
+              # stack layouts: composite type, wipes mode on, visible box of every input
+              "(rv.commands.getStringProperty(rv.commands.viewNode() + '_stack.composite.type') "
+              "if rv.commands.propertyExists(rv.commands.viewNode() + '_stack.composite.type') "
+              "else []), "
+              "rv.runtime.eval('rvui.wipeShown()', ['rvui']) == str(rv.commands.CheckedMenuState), "
+              "([rv.commands.getFloatProperty(n + '.stencil.visibleBox') for n in "
+              + stack_transforms_expr("rv.commands.viewNode()") + "] "
+              "if rv.commands.nodeType(rv.commands.viewNode()) == 'RVStackGroup' else []))")
 SOURCES_EXPR = ("[(s, rv.commands.getStringProperty(s + '.media.movie'), "
                 "[v['name'] for v in rv.commands.sourceMediaInfo(s)['viewInfos']]) "
                 "for s in sorted(rv.commands.nodesOfType('RVFileSource'))]")
@@ -390,12 +419,20 @@ def post_commands(compare="sequence", marks=(), fps=None, stereo=None, stereo_vi
     elif compare == "sequence":
         c.append("rv.commands.setViewNode('defaultSequence')")
     else:
-        comp = {"wipe": "over", "difference-inverted": "-difference"}.get(compare, compare)
+        comp = STACK_COMPOSITES.get(compare, compare)
         c.append(f"rv.commands.setStringProperty('defaultStack_stack.composite.type', ['{comp}'], True)")
         c.append("rv.commands.setViewNode('defaultStack')")
     want_wipe = "!=" if compare == "wipe" else "=="
     c.append("rv.runtime.eval('if (rvui.wipeShown() " + want_wipe +
              " commands.CheckedMenuState) rvui.toggleWipe();', ['rvui', 'commands'])")
+    if compare not in ("tile", "sequence"):
+        # the wipes mode only draws the handle; the split itself is the top source's visible
+        # box, which starts as the whole image. Wipe: top source on the left half, the second
+        # on the right; other stacks: whole images (a refreshed window keeps an old box)
+        top = list(WIPE_BOX if compare == "wipe" else FULL_BOX)
+        c.append("[rv.commands.setFloatProperty(n + '.stencil.visibleBox', "
+                 f"{top!r} if k == 0 else {list(FULL_BOX)!r}, True) for k, n in "
+                 "enumerate(" + stack_transforms_expr("'defaultStack'") + ")]")
     reload = False
     if view_assign and any(view_assign):
         c.append("[rv.commands.setStringProperty(s + '.request.imageComponent', ['view', v], True) "
@@ -449,23 +486,40 @@ def child_env(env=None):
 
 
 STATE_KEYS = ("frame", "frameStart", "frameEnd", "marks", "sourceStarts", "sources",
-              "viewNode", "viewNodeType", "stereo", "fps")
+              "viewNode", "viewNodeType", "stereo", "fps", "composite", "wipe", "wipeBoxes")
 
 
 def parse_state(text):
-    """rvpush py-eval-return output of STATE_EXPR -> dict, or None if it is not that."""
+    """rvpush py-eval-return output of STATE_EXPR -> dict, or None if it is not that.
+
+    Stack layouts add "composite" (the stack's composite type), "wipe" (RV's wipes mode is
+    on) and "wipeBox" (visible part of the top source, [x0, x1, y0, y1] in 0-1 of the image;
+    [0, 0.5, 0, 1] shows its left half). They are None for other views, and for the shorter
+    tuple an older copy of this script asked for."""
     try:
         vals = ast.literal_eval(text.strip())
-        if not isinstance(vals, tuple) or len(vals) != len(STATE_KEYS):
+        if not isinstance(vals, tuple) or len(vals) not in (len(STATE_KEYS), len(STATE_KEYS) - 3):
             return None
         st = dict(zip(STATE_KEYS, vals))
         st["marks"] = sorted(int(m) for m in st["marks"])
         st["sourceStarts"] = [int(f) for f in st["sourceStarts"]][:-1]
         st["stereo"] = st["stereo"][0] if st["stereo"] else "off"
         st["frames"] = int(st["frameEnd"]) - int(st["frameStart"]) + 1
+        stack = st["viewNodeType"] == "RVStackGroup"
+        comp = st.get("composite")
+        st["composite"] = comp[0] if stack and comp else None
+        st["wipe"] = bool(st["wipe"]) if stack and "wipe" in st else None
+        boxes = st.pop("wipeBoxes", None)
+        top = boxes[0] if stack and boxes else None
+        st["wipeBox"] = [round(float(v), 4) for v in top] if top and len(top) == 4 else None
         return st
     except (ValueError, SyntaxError, TypeError, KeyError, IndexError):
         return None
+
+
+def _box_matches(box, want):
+    return box is not None and len(box) == 4 and \
+        all(abs(float(a) - float(b)) <= BOX_TOLERANCE for a, b in zip(box, want))
 
 
 def check_state(state, expected):
@@ -483,10 +537,38 @@ def check_state(state, expected):
         probs.append(f"view {state['viewNodeType']}, expected {expected['viewNodeType']}")
     if "stereo" in expected and state["stereo"] != expected["stereo"]:
         probs.append(f"stereo {state['stereo']}, expected {expected['stereo']}")
+    if "composite" in expected and state.get("composite") != expected["composite"]:
+        probs.append(f"stack composite {state.get('composite')}, expected {expected['composite']}")
+    if "wipe" in expected and state.get("wipe") != expected["wipe"]:
+        probs.append(f"wipes {'on' if state.get('wipe') else 'off'}, expected "
+                     f"{'on' if expected['wipe'] else 'off'}")
+    if "wipeBox" in expected and not _box_matches(state.get("wipeBox"), expected["wipeBox"]):
+        want = list(expected["wipeBox"])
+        why = "the whole image" if _box_matches(want, FULL_BOX) else "the wipe edge in view"
+        probs.append(f"top source's visible box {state.get('wipeBox')}, expected {want} ({why})")
     return probs
 
 
+def expected_layout(compare, latlong=False):
+    """What the read-back should show for a layout: view node type, and for stack layouts the
+    composite type, wipes mode and the top source's visible box."""
+    exp = {}
+    if latlong:
+        exp["viewNodeType"] = "LatLongViewer"
+    elif compare in VIEW_NODE_TYPES:
+        exp["viewNodeType"] = VIEW_NODE_TYPES[compare]
+    else:
+        exp["viewNodeType"] = "RVStackGroup"
+    if compare in STACK_COMPOSITES and not latlong:
+        exp["composite"] = STACK_COMPOSITES[compare]
+        exp["wipe"] = compare == "wipe"
+        exp["wipeBox"] = list(WIPE_BOX if compare == "wipe" else FULL_BOX)
+    return exp
+
+
 VIEW_NODE_TYPES = {"sequence": "RVSequenceGroup", "tile": "RVLayoutGroup"}
+STACK_COMPOSITES = {"wipe": "over", "difference": "difference", "difference-inverted": "-difference",
+                    "over": "over", "replace": "replace"}   # defaultStack_stack.composite.type
 
 
 # --- items: what the caller asked for, mapped onto RV sources and frames -------------------
@@ -1074,10 +1156,7 @@ def review(tokens, rv, rvpush, tag=DEFAULT_TAG, marks="auto", compare="sequence"
         if fps is None and all(is_still(f) for g in groups for f in _group_files(g)):
             fps = STILL_FPS
         expected = {"sources": len(groups), "marks": marks}
-        if latlong:
-            expected["viewNodeType"] = "LatLongViewer"
-        elif compare in VIEW_NODE_TYPES:
-            expected["viewNodeType"] = VIEW_NODE_TYPES[compare]
+        expected.update(expected_layout(compare, latlong))
         expected["stereo"] = stereo or "off"
     state, problems = None, []
     for attempt in range(2):                 # post commands, read back, one retry on mismatch
@@ -1105,8 +1184,13 @@ def review(tokens, rv, rvpush, tag=DEFAULT_TAG, marks="auto", compare="sequence"
         names = _eval(rvpush, tag, SOURCE_NAMES_EXPR) or ([], [])
         src_names, sess_nodes = names[0], names[1]
         for cmd in review_props_commands(src_names, source_items, items,
-                                         sess_nodes[0] if sess_nodes else None, manifest) +                 annotation_commands(src_names, source_items, items):
+                                         sess_nodes[0] if sess_nodes else None, manifest) + \
+                annotation_commands(src_names, source_items, items):
             _rvpush(rvpush, tag, "py-exec", cmd)
+        if compare not in ("sequence", "tile") and items:
+            # RV's window-title mode names the media at the current frame, and a replaced
+            # stack can come up as "Untitled"; name the window after the top item instead
+            _rvpush(rvpush, tag, "py-exec", window_title_command(items[0].get("label"), compare))
         layout = "sequence" if compare == "sequence" and not latlong else compare
         ranges = item_ranges(state, source_items, len(items), layout)
         by_item = {}
@@ -1147,6 +1231,130 @@ def review(tokens, rv, rvpush, tag=DEFAULT_TAG, marks="auto", compare="sequence"
                                                          [dict(o) for o in out_items]),
             "session": session_out, "state": state, "problems": problems,
             "errors": errors, "warnings": warnings, "log": watch.sources(), "ok": not problems}
+
+
+def window_title_command(label, compare):
+    """py-exec string that sets RV's window title to 'LABEL -- LAYOUT' (ASCII-escaped)."""
+    title = f"{label or 'review'} -- {compare}"
+    return f"rv.commands.setWindowTitle({ascii(title)})"
+
+
+# --- key-binding self-test ---------------------------------------------------------------
+
+KEY_EVENTS = (("Right", "key-down--right"), ("Left", "key-down--left"),
+              ("Alt+Right", "key-down--alt--right"), ("Alt+Left", "key-down--alt--left"))
+SELFTEST_KEYS = ("Right", "Right", "Left", "Alt+Right", "Alt+Right", "Alt+Left", "Alt+Left")
+SELFTEST_STATE_EXPR = ("(rv.commands.frame(), rv.commands.frameStart(), rv.commands.frameEnd(), "
+                       "rv.commands.inPoint(), rv.commands.outPoint(), rv.commands.markedFrames(), "
+                       "rv.commands.isPlaying())")
+BINDINGS_EXPR = ("[b for b in rv.commands.bindings() if b[0] in "
+                 + repr([e for _, e in KEY_EVENTS]) + "]")
+FRAME_EXPR = "rv.commands.frame()"
+
+
+def key_command(event):
+    """py-exec string that sends a key event through RV's event tables, as a key press would
+    (rv.commands.sendInternalEvent; needs no keyboard focus or accessibility permission)."""
+    return f"rv.commands.sendInternalEvent({event!r}, '', '')"
+
+
+def expected_frame(key, frame, start, end, marks, in_point=None, out_point=None):
+    """Frame RV's default bindings move to, or None when it cannot be predicted.
+
+    Right / Left: stepForward1 / stepBackward1 (extra_commands.mu), one frame, wrapping inside
+    the in / out range when the frame is in it, else inside the whole range.
+    Alt+Right / Alt+Left: nextMarkedFrame / previousMarkedFrame (rvui.mu,
+    markedBoundariesAroundFrame): the next mark after the frame, or the last frame when there
+    is none; the previous mark before it, or the first frame. Without marks RV uses the
+    sequence's source boundaries instead, which are not read back: None."""
+    in_point = start if in_point is None else in_point
+    out_point = end if out_point is None else out_point
+    if key in ("Right", "Left"):
+        inside = in_point <= frame <= out_point
+        upper, lower = (out_point, in_point) if inside else (end, start)
+        if key == "Right":
+            new = frame + 1
+            if upper == end and new > upper:
+                new = lower + (new - upper) - 1
+        else:
+            new = frame - 1
+            if lower == start and new < lower:
+                new = upper - (lower - new) + 1
+        return new
+    ms = sorted(set(int(m) for m in marks))
+    if not ms:
+        return None
+    i = max((k for k, m in enumerate(ms) if m <= frame), default=-1)
+    if key == "Alt+Right":
+        return min(ms[i + 1] if i + 1 < len(ms) else end + 1, end)
+    if i < 0:
+        return start
+    if frame != ms[i]:
+        return ms[i]
+    return start if i == 0 else ms[i - 1]
+
+
+def _direction_ok(key, before, after, start, end):
+    """Without marks to predict from, Alt+Right must go later and Alt+Left earlier (or stay
+    on the last / first frame)."""
+    if key == "Alt+Right":
+        return after > before or (before == end and after == end)
+    return after < before or (before == start and after == start)
+
+
+def selftest(rvpush, tag):
+    """Press Right, Left, Alt+Right and Alt+Left in the review window through RV's own event
+    tables and check each moves the frame as documented; goes back to the starting frame."""
+    st = _eval(rvpush, tag, SELFTEST_STATE_EXPR)
+    if not isinstance(st, (list, tuple)) or len(st) != 7:
+        raise RvError(f"no RV with tag '{tag}' answered. Load a review with this script first, "
+                      f"or pass the --tag the review window was started with.")
+    frame0, start, end, in_point, out_point, marks, playing = st
+    marks = sorted(set(int(m) for m in marks or []))
+    if end - start + 1 < 2:
+        raise RvError("the review window shows a single frame, so the keys have nowhere to go. "
+                      "Load a review with two or more frames (a sequence, not a wipe of two "
+                      "stills), then run --selftest again.")
+    problems = []
+    found = {}
+    for b in _eval(rvpush, tag, BINDINGS_EXPR) or []:
+        if isinstance(b, (list, tuple)) and len(b) >= 2:
+            found[b[0]] = b[1]
+    bindings = {}
+    for key, event in KEY_EVENTS:
+        bindings[key] = {"event": event, "action": found.get(event)}
+        if event not in found:
+            problems.append(f"{key} ({event}) is not bound in RV's event tables")
+    _rvpush(rvpush, tag, "py-exec",
+            "rv.commands.stop(); rv.commands.setFrame(rv.commands.frameStart())")
+    cur = _eval(rvpush, tag, FRAME_EXPR)
+    events = dict(KEY_EVENTS)
+    steps = []
+    for key in SELFTEST_KEYS:
+        known = isinstance(cur, int)
+        want = expected_frame(key, cur, start, end, marks, in_point, out_point) if known else None
+        _rvpush(rvpush, tag, "py-exec", key_command(events[key]))
+        got = _eval(rvpush, tag, FRAME_EXPR)
+        if not known or not isinstance(got, int):
+            ok = False
+        elif want is not None:
+            ok = got == want
+        else:
+            ok = _direction_ok(key, cur, got, start, end)
+        steps.append({"key": key, "event": events[key], "from": cur, "to": got,
+                      "expected": want, "ok": ok})
+        if not ok:
+            what = want if want is not None else (
+                "a later frame" if key == "Alt+Right" else "an earlier frame")
+            problems.append(f"{key} moved frame {cur} to {got}, expected {what}")
+        cur = got
+    _rvpush(rvpush, tag, "py-exec", f"rv.commands.setFrame({int(frame0)})")
+    back = _eval(rvpush, tag, FRAME_EXPR)
+    if back != frame0:
+        problems.append(f"could not go back to frame {frame0} (RV is on {back})")
+    return {"action": "selftest", "tag": tag, "frame": frame0, "restored": back == frame0,
+            "was_playing": bool(playing), "range": [start, end], "in_out": [in_point, out_point],
+            "marks": marks, "bindings": bindings, "steps": steps, "problems": problems}
 
 
 # --- command line -----------------------------------------------------------------------
@@ -1210,7 +1418,8 @@ def build_parser():
                "  python rv_review.py --stereo pair -- [ left.exr right.exr ]\n"
                "  python rv_review.py pano_latlong.exr --latlong\n"
                "  python rv_review.py --notes --export-annotated review/notes\n"
-               "  python rv_review.py --state")
+               "  python rv_review.py --state\n"
+               "  python rv_review.py --selftest")
     ap.add_argument("sources", nargs="*", metavar="SOURCE",
                     help="stills, movies, sequence specs, [ ... ] groups or one .rv session, "
                          "in viewing order")
@@ -1253,6 +1462,11 @@ def build_parser():
                     help="turn on RV's info strip (F7); RV then saves it as on in its preferences")
     ap.add_argument("--state", action="store_true",
                     help="load nothing; print the review window's state and item mapping")
+    ap.add_argument("--selftest", action="store_true",
+                    help="load nothing; send Right, Left, Alt+Right and Alt+Left to the review "
+                         "window through RV's event tables, check that each moves the frame as "
+                         "the key table says, then go back to the starting frame (needs a "
+                         "review with 2+ frames; no keyboard focus or accessibility permission)")
     return ap
 
 
@@ -1277,6 +1491,11 @@ def main(argv=None):
         if a.state:
             print(json.dumps(envelope(_state_body(rvpush, a.tag))))
             return EXIT_OK
+        if a.selftest:
+            body = selftest(rvpush, a.tag)
+            code = EXIT_MISMATCH if body["problems"] else EXIT_OK
+            print(json.dumps(envelope(body, code)))
+            return code
         if a.notes:
             body = read_notes(rv, rvpush, a.tag, a.export_annotated)
             code = EXIT_MISMATCH if body["problems"] else EXIT_OK

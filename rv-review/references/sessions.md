@@ -53,9 +53,9 @@ python scripts/rv_session.py render review.rv -o notes/review.#.png -- -t 3,7,12
 Everything after `--` goes to rvio unchanged (frame ranges and lists with `-t`, `-outres W H`,
 `-leader simpleslate ...`, `-overlay frameburn ...`; see the rvio skill for codecs and
 overlays). rvio renders the session's view node: the sequence, the wipe / difference stack or
-the tile layout, with text annotations burnt in. A wipe is interactive: rvio renders a
-wipe stack as its top source, so render `tile` for side by side or `difference` for a
-difference movie. Output images are numbered by global frame
+the tile layout, with text annotations burnt in. A wipe renders as it opens: the first
+item on the left half, the second on the right (the split is fixed; render `tile` for whole
+images side by side, or `difference` for a difference movie). Output images are numbered by global frame
 (`-t 3,7` writes `review.0003.png`, `review.0007.png`). A difference render has alpha
 differenced too: write JPEG or drop alpha, or the result looks blank in viewers that honour
 alpha. rvio cannot read OTIO; convert timelines to `.rv` first.
@@ -70,7 +70,7 @@ alpha. rvio cannot read OTIO; convert timelines to `.rv` first.
 | `view` | `request.imageComponent = [ "view" "NAME" ]` |
 | `stereo_views` | `request.stereoViews = [ "L" "R" ]` |
 | order, marks, `fps`, `title` | `review_sequence` (RVSequenceGroup): inputs in order, `session.marks`, `session.fps`, `ui.name` |
-| `layout` wipe / difference / difference-inverted / over / replace | `review_stack` (RVStackGroup) of the first two items, `ui.wipes`, `review_stack_stack.composite.type` (`over`, `difference`, `-difference`, `replace`) |
+| `layout` wipe / difference / difference-inverted / over / replace | `review_stack` (RVStackGroup) of the first two items, `ui.wipes`, `review_stack_stack.composite.type` (`over`, `difference`, `-difference`, `replace`); for a wipe also `review_stack_t_sourceGroup000000.stencil.visibleBox = [ 0 0.5 0 1 ]` (the wipe edge in the middle) |
 | `layout` tile | `review_layout` (RVLayoutGroup, `layout.mode = "packed"`) |
 | `stereo` | `defaultOutputGroup_stereo.stereo.type` |
 | labels, groups, `meta` | component `review` on each RVFileSource (`item`, `label`, `title`, `group`, `view`, `meta` as JSON) and on the `rv` RVSession object (`title`, `layout`, `meta`, `groups`, `schema_version`) |

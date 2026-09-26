@@ -21,7 +21,7 @@ python -m pytest tests -q
 The tests never need RV or OpenRV installed; they exercise the scripts directly (`sheet_panels.py`,
 `rv_review.py`, `rvio_cmd.py`, `rvio_codecs.py`, `rvls_check.py`, `rvpkg_list.py`, `rv_find.py`)
 against synthetic inputs and captured RV/rvpush output shapes. CI runs the same suite on
-Windows, macOS and Linux with Python 3.10 and 3.13; keep new tests OS-independent (no
+Windows, macOS and Linux with Python 3.9, 3.10 and 3.13; keep new tests OS-independent (no
 hardcoded path separators, no assumption about which drive or home folder exists).
 
 If you can test against a real RV or OpenRV build, note the exact build and OS in the pull
@@ -82,6 +82,12 @@ addition:
 - `SKILL.md` files stay under 500 lines; put anything longer in `references/` and link to it.
   Keep gotchas (the known ways a tool lies about success) in `SKILL.md` itself, not buried in a
   reference file, since that is what an agent reads first.
+- Scripts and tests run on Python 3.9 or later (Apple's command-line tools still install 3.9
+  as `/usr/bin/python3`).
+  Put `from __future__ import annotations` at the top of a file that uses `X | Y` or
+  `list[str]` in annotations, and avoid newer runtime features such as `match`,
+  `zip(strict=)` and `Path.write_text(newline=)`; `tests/test_py39_compat.py` flags the
+  common ones, and CI runs the suite on 3.9.
 - Scripts (`scripts/*.py`) use only the Python standard library, except `sheet_panels.py`,
   which needs `numpy` and `Pillow` for image work. Do not add a new third-party dependency
   without discussing it in an issue first; every extra dependency is another thing a fresh

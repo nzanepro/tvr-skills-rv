@@ -7,6 +7,7 @@ asks for wipe / difference / tile directly. The script does all of this for you.
 Contents: [Where rv lives](#where-rv-lives) · [Start a review window](#start-a-review-window) ·
 [Replace or add media](#replace-or-add-media) · [After loading](#after-loading) ·
 [Read the state back](#read-the-state-back) · [Layouts and flags](#layouts-and-flags) ·
+[Wipe position](#wipe-position) · [Check the frame keys](#check-the-frame-keys) ·
 [rvpush exit codes](#rvpush-exit-codes) · [Environment variables](#environment-variables)
 
 ## Where rv lives
@@ -76,6 +77,17 @@ Compare with what was loaded: `frameEnd - frameStart + 1` frames, one `RVFileSou
 source or bracket group, the expected marks, view node and stereo mode. `edl.frame` holds the
 global start frame of each source plus an end + 1 terminator.
 
+For a stack (wipe, difference, over, replace) also read its composite, whether the wipes mode
+is on, and the visible box of the top source (next section):
+
+```bash
+rvpush -tag rv-review py-eval-return "(rv.commands.getStringProperty('defaultStack_stack.composite.type'), rv.runtime.eval('rvui.wipeShown()', ['rvui']), rv.commands.getFloatProperty('defaultStack_t_' + rv.commands.nodeConnections('defaultStack', False)[0][0] + '.stencil.visibleBox'))"
+```
+
+`(['over'], '2', [0.0, 0.5, 0.0, 1.0])` is a wipe split down the middle. `wipeShown()` returns
+a menu state as text: `'2'` checked (wipes on), `'1'` unchecked, `'-1'` disabled (the view is
+not a stack). `--state` and every load report these as `composite`, `wipe` and `wipeBox`.
+
 Per-source detail: `rv.commands.sourceMediaInfo(src)` (keys `file`, `startFrame`, `endFrame`,
 `fps`, `width`, `height`, `hasAudio`, `viewInfos`, `defaultView`).
 
@@ -84,7 +96,7 @@ Per-source detail: `rv.commands.sourceMediaInfo(src)` (keys `file`, `startFrame`
 | rv flag | Python after loading | Effect |
 |---|---|---|
 | (default) | `setViewNode('defaultSequence')` | sources back to back |
-| `-wipe` | stack + composite `over` + `rv.runtime.eval('rvui.toggleWipe();', ['rvui'])` | wipe between the first two |
+| `-wipe` | stack + composite `over` + `rv.runtime.eval('rvui.toggleWipe();', ['rvui'])` + the top source's `stencil.visibleBox` (below) | wipe between the first two |
 | `-diff` | `setStringProperty('defaultStack_stack.composite.type', ['difference'], True); setViewNode('defaultStack')` | difference |
 | (menu: Difference (Inverted)) | composite `-difference` on defaultStack | B minus A: the other direction of the one-sided difference (`--compare difference-inverted`) |
 | `-over`, `-replace`, `-topmost` | composite `over` / `replace` / `topmost` on defaultStack | stacked |
@@ -96,6 +108,63 @@ Per-source detail: `rv.commands.sourceMediaInfo(src)` (keys `file`, `startFrame`
 
 Per-source options inside brackets: `-in N`, `-out N`, `-fps N`, `-noMovieAudio`,
 `-select view NAME`. Full lists: `rv -help` and the OpenRV manual below.
+
+## Wipe position
+
+Turning the wipes mode on (`-wipe`, F6, `rvui.toggleWipe()`) only adds the drag handle: the top
+source still covers the whole frame until someone drags its edge in from the side. The edge
+is the `stencil.visibleBox` property, `[x0, x1, y0, y1]` in 0-1 of the image, on the stack's
+per-input transform `<stack>_t_<input>` (RVTransform2D); RV's wipes mode (`wipes.mu`) edits the
+same property while dragging. Show the first source on the left half and the second on the
+right:
+
+```bash
+rvpush -tag rv-review py-exec "rv.commands.setFloatProperty('defaultStack_t_' + rv.commands.nodeConnections('defaultStack', False)[0][0] + '.stencil.visibleBox', [0.0, 0.5, 0.0, 1.0], True)"
+```
+
+`[0.0, 1.0, 0.0, 1.0]` is the whole image again (also Wipes > Reset All Wipes). A saved `.rv`
+keeps the box (`float visibleBox = [ 0 0.5 0 1 ]` in the `stencil` component), and rvio then
+renders the split too. Checked with OpenRV 3.1.0 on Windows; the input's transform is
+`defaultStack_t_sourceGroup000000`.
+
+## Check the frame keys
+
+`python scripts/rv_review.py --selftest` checks that the review window's key bindings move
+the frame as documented, without touching the keyboard: it needs no window focus and, on
+macOS, no Accessibility permission. It stops playback, goes to the first frame, sends Right,
+Right, Left, Alt+Right, Alt+Right, Alt+Left, Alt+Left, reads the frame after each, and goes
+back to the frame it started on. The window needs two or more frames (a sequence; a wipe of
+two stills is one frame). By hand:
+
+```bash
+rvpush -tag rv-review py-eval-return "[b for b in rv.commands.bindings() if b[0] in ['key-down--right', 'key-down--left', 'key-down--alt--right', 'key-down--alt--left']]"
+rvpush -tag rv-review py-exec "rv.commands.sendInternalEvent('key-down--right', '', '')"
+rvpush -tag rv-review py-eval-return "rv.commands.frame()"
+```
+
+| Key | Event | RV's action (`rvui.mu`, `extra_commands.mu`) |
+|---|---|---|
+| Right | `key-down--right` | next frame; past the last frame it wraps to the first |
+| Left | `key-down--left` | previous frame; before the first it wraps to the last |
+| Alt+Right (Option on macOS) | `key-down--alt--right` | next mark; with no later mark, the last frame |
+| Alt+Left | `key-down--alt--left` | previous mark; with none before, the first frame |
+
+Without marks, Alt+Left / Alt+Right jump between source boundaries instead. Result (shortened):
+
+```json
+{"schema": "rv-review.result", "ok": true, "exit_code": 0, "action": "selftest",
+ "tag": "rv-review", "frame": 3, "restored": true, "range": [1, 5], "marks": [1, 4],
+ "bindings": {"Right": {"event": "key-down--right", "action": "Step Forward 1 Frame"}, "...": {}},
+ "steps": [{"key": "Right", "event": "key-down--right", "from": 1, "to": 2, "expected": 2, "ok": true},
+           {"key": "Alt+Right", "event": "key-down--alt--right", "from": 4, "to": 5, "expected": 5, "ok": true}],
+ "problems": []}
+```
+
+Exit 0 when every step moved as expected and the starting frame was restored, 3 otherwise
+(`problems` says which key), 1 when no RV answered or the window has a single frame. When
+the self-test passes but the physical keys do nothing, the key presses are not reaching RV:
+click into the RV window, and note that remote-desktop and screen-sharing clients can keep
+Alt / Option for themselves.
 
 ## rvpush exit codes
 

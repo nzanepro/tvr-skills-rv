@@ -8,6 +8,13 @@ of 320 x 180 sRGB PNG with the frame number drawn on each, a 1 s stereo 48 kHz t
 with `rvls -l`, `rvls -x` and by comparing pixels with the source. Times are wall-clock for
 the whole command; about 1 s of each is start-up.
 
+## Builds checked
+
+| OS | Build | What was run |
+|---|---|---|
+| Windows 11 | OpenRV 3.1.0, FFmpeg 7.1, ProRes / DNxHD / DV / MPEG-2 encoders enabled | everything on this page |
+| macOS 26 (Apple silicon) | OpenRV 3.0.0, local build (`RV.app`, no `rvio_hw` / `rvio_sw`) | the codec probe and the round trips in [macOS, OpenRV 3.0.0](#macos-openrv-300) |
+
 ## Conversions
 
 | Command | Result | Time |
@@ -67,6 +74,32 @@ Overlays and slates: see `slates-overlays.md` (all five scripts verified, 1.2-1.
 
 The tested build had ProRes, DNxHD, DV and MPEG-2 encoders enabled; a stock OpenRV build
 leaves those out. Probe your own build before promising a codec.
+
+## macOS, OpenRV 3.0.0
+
+A stock-style OpenRV 3.0.0 build on an Apple silicon Mac, probed with
+`scripts/rvio_codecs.py` (`.mov`):
+
+| Result | Codecs |
+|---|---|
+| Written | mjpeg, mpeg4, png, mpeg1video, cfhd, v210, v410, jpeg2000, tiff |
+| Refused with `ERROR: Unsupported codec: <name>` | prores_ks, prores_aw, prores, mpeg2video, hevc |
+| Refused with `ERROR: Invalid video codec: <name>` | dnxhd, dvvideo, libx264, h264, libx265, libvpx-vp9, libaom-av1, qtrle |
+
+No ProRes, DNxHD, DV or MPEG-2 encoders, as expected for a stock build; the refusal wording
+depends on the codec, so match either message. These round trips worked (0.35-0.46 s each):
+
+| Command (through `scripts/rvio_cmd.py ... --run`) | Result |
+|---|---|
+| `seq/test.#.png -o test.mov --codec mjpeg --quality 0.9` | 10 frames, 640 x 360, 24 fps |
+| `seq/test.#.png -o test.mp4 --codec mpeg4` | 10 frames, 640 x 360, 24 fps |
+| `test.mov -o back/test.#.png` | frames 0001-0010, 4 channels (rvio adds alpha) |
+| `seq/test.#.png -o exr/test.#.exr --in-colour srgb --outformat 16 float --exr-compression DWAA --quality 45` | 10 frames, 16f |
+| `nonexistent.#.png -o nothing.mov` | stopped by `rvio_cmd.py` before rvio ran (exit 2), so no placeholder movie |
+
+rvio printed a harmless Qt warning on stderr when the shell locale was `C` (`Detected locale
+"C" with character encoding "US-ASCII" ... switched to "UTF-8"`); set `LANG` to a UTF-8
+locale to silence it.
 
 ## Failures that still exit 0
 

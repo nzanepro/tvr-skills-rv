@@ -9,8 +9,9 @@ write  MANIFEST -o review.rv [--layout L] [--marks auto|groups|none|N,N] [--fps 
         in / out (cut), fps, view selection (request.imageComponent) and stereo views;
       - a sequence node "review_sequence" plays the items back to back, with marks;
       - layout wipe / difference / difference-inverted / over / replace adds a stack
-        "review_stack" of the first two items, tile a packed layout "review_layout" of all,
-        and makes it the view (the sequence stays available in RV's Sessions list);
+        "review_stack" of the first two items (a wipe opens split down the middle), tile a
+        packed layout "review_layout" of all, and makes it the view (the sequence stays
+        available in RV's Sessions list);
       - item "annotations" become RVPaint text on the given frames (with the frame:N.order
         entry, without which rvio does not draw them);
       - labels, titles, groups and each item's free-form "meta" are stored in a "review"
@@ -53,6 +54,7 @@ TEXT_USER = "review"           # user part of RVPaint component names (text:ID:F
 VIEW_NODES = {"sequence": "review_sequence", "stack": "review_stack", "layout": "review_layout"}
 STACK_OPS = {"wipe": "over", "over": "over", "replace": "replace", "difference": "difference",
              "difference-inverted": "-difference"}
+WIPE_BOX = (0.0, 0.5, 0.0, 1.0)   # top source's visible part in a wipe: [x0, x1, y0, y1], 0-1
 NAME_OK = re.compile(r"^[A-Za-z_][A-Za-z0-9_]+$")
 
 
@@ -320,6 +322,11 @@ def build(manifest, marks=None, fps=None, layout=None):
         g.prop(st, "RVStackGroup", "ui", "string", "name", f"{title} ({layout})")
         g.prop(st, "RVStackGroup", "ui", "int", "wipes", 1 if layout == "wipe" else 0)
         g.prop(f"{st}_stack", "RVStack", "composite", "string", "type", STACK_OPS[layout])
+        if layout == "wipe":
+            # the wipe edge: the top item shows on the left half, the second on the right (the
+            # stack's per-input transform, which RV's wipes mode edits when the edge is dragged)
+            g.prop(f"{st}_t_{names[0]}", "RVTransform2D", "stencil", "float", "visibleBox",
+                   list(WIPE_BOX))
     if manifest.get("stereo") and manifest["stereo"] != "off":
         # the node RV itself saves the display stereo mode on
         g.prop("defaultOutputGroup_stereo", "RVDisplayStereo", "stereo", "string", "type",

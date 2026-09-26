@@ -18,6 +18,7 @@ Contents: [Contract](#the-contract) · [Manifest](#review-manifest-input) ·
 | Keep | add `--save-session review.rv` | a session that reopens the same review (`rv_review.py review.rv`) and carries the meta |
 | Read notes | `python scripts/rv_review.py --notes [--export-annotated DIR]` | per item: annotated frames, text, stroke counts, rendered images |
 | Check | `python scripts/rv_review.py --state` | what the window holds now, with the item mapping |
+| Check the keys | `python scripts/rv_review.py --selftest` | Left / Right / Alt+Left / Alt+Right move the frame as documented (see `rv-commands.md`) |
 | Render | `python scripts/rv_session.py render review.rv -o review.mov` | a movie or images for people without RV (see the rvio skill for codecs, slates, burn-ins) |
 
 Rules for callers:
@@ -104,12 +105,18 @@ Schema `rv-review.result`, `schema_version` 1. Load example (shortened):
  "groups": [{"id": "sh010", "label": "shot010", "frames": [1, 96], "meta": {...}}, ...],
  "session": "/abs/review.rv",
  "state": {"frame": 1, "frameStart": 1, "frameEnd": 156, "marks": [1, 97], "sources": 3,
-           "viewNodeType": "RVSequenceGroup", "stereo": "off", "fps": 24.0, "frames": 156},
+           "viewNodeType": "RVSequenceGroup", "stereo": "off", "fps": 24.0, "frames": 156,
+           "composite": null, "wipe": null, "wipeBox": null},
  "problems": [], "errors": [], "warnings": [], "log": ["/tmp/rv-review-rv-review.log"]}
 ```
 
 - `action`: `launched` (new window), `replaced` (the tagged window was reused), `state`,
-  `notes`, or `error`.
+  `notes`, `selftest`, or `error`.
+- `state.composite`, `state.wipe`, `state.wipeBox`: for a stack view, its composite type
+  (`over`, `difference`, `-difference`, `replace`), whether RV's wipes mode is on, and the
+  visible part of the top source as `[x0, x1, y0, y1]` in 0-1 of the image (`[0, 0.5, 0, 1]`
+  is a wipe split down the middle); `null` for sequence, tile and other views. They are
+  checked against the requested layout, so `ok` covers the layout as well as the view type.
 - `items[].frames`: `[first, last]` global RV frames of the item. Map any RV frame back to
   its item (and `meta`) with it. In stack and tile layouts every item spans the whole range.
 - `items[].sources`: RV source nodes of the item (several when `--views all` expanded it).

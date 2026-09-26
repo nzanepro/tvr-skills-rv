@@ -5,6 +5,26 @@ All notable changes to this project are listed here. The format follows
 [Semantic Versioning](https://semver.org/). The version matches `metadata.version` in each
 skill's `SKILL.md` and the marketplace entry.
 
+## [0.2.1] - 2026-09-26
+
+### Fixed
+
+- `rv-review`: `--compare wipe` now opens split down the middle (first source on the left, second on the right) by setting the top source's `stencil.visibleBox`; before, RV turned the wipes mode on but showed only the first source until the edge was dragged. Saved wipe sessions (`--save-session`, `rv_session.py write --layout wipe`) carry the same split, and rvio renders it.
+- After a wipe, difference, over or replace load the RV window is named after the first item and the layout instead of "Untitled".
+
+### Added
+
+- The read-back reports `composite`, `wipe` and `wipeBox` for stack layouts and checks them (and the stack view type) against the requested layout, so `ok` covers the layout, not only the node type.
+- `rv_review.py --selftest`: sends Left / Right / Alt+Left / Alt+Right to the review window through RV's event tables, checks that each moves the frame as documented, restores the starting frame and prints JSON. It needs no keyboard focus and, on macOS, no Accessibility permission.
+- CI runs the tests on Python 3.9 as well as 3.10 and 3.13; `tests/test_py39_compat.py` checks 3.9 syntax and flags newer runtime APIs.
+- `rvio`: verified results for OpenRV 3.0.0 on macOS (Apple silicon), with its codec table: writes mjpeg, mpeg4, png, mpeg1video, cfhd, v210, v410, jpeg2000 and tiff, and refuses the others with "Unsupported codec" or "Invalid video codec" depending on the codec.
+
+### Changed
+
+- Every skill needs Python 3.9 or later (was 3.10+ for rv-review and 3.8+ for the others); the whole suite also runs on 3.9.
+- Key tables say "Alt (Option on macOS)" and note that Alt+Right with no later mark goes to the last frame.
+- Versions: rv-review 0.2.1; rvio, rvls and rvpkg 0.1.1.
+
 ## [0.2.0] - 2026-09-26
 
 ### Added
@@ -57,5 +77,6 @@ skill's `SKILL.md` and the marketplace entry.
 - Claude Code plugin marketplace (`.claude-plugin/marketplace.json`), trigger evals, tests and
   CI on Windows, macOS and Linux.
 
+[0.2.1]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.1
 [0.2.0]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.1.0

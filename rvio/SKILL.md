@@ -2,9 +2,9 @@
 name: rvio
 description: "Converts and transcodes media with RV / OpenRV's rvio command-line tool: image sequence to movie and back, EXR / OpenEXR, DPX, TIFF, PNG and JPEG, MOV / MP4 (MJPEG, MPEG-4; ProRes or DNxHD only in builds that include them), resize, crop, frame ranges, fps, audio, colour (sRGB, log, Rec.709, ACES, LUTs, baked OCIO), slates, frame burn-ins, watermarks and mattes. Use when media must be written or re-encoded. Not for listing sequences (rvls), RV packages (rvpkg), or viewing in RV (rv-review)."
 license: MIT
-compatibility: Needs RV or OpenRV (rvio) and Python 3.8+ for the helper scripts (standard library only). OpenRV's rvio renders through OpenGL, so it needs a desktop session or a virtual display (Linux installs may also ship rvio_sw). Works on Windows, macOS and Linux.
+compatibility: Needs RV or OpenRV (rvio) and Python 3.9 or later for the helper scripts (standard library only). OpenRV's rvio renders through OpenGL, so it needs a desktop session or a virtual display (Linux installs may also ship rvio_sw). Works on Windows, macOS and Linux.
 metadata:
-  version: 0.1.0
+  version: 0.1.1
 ---
 
 # Convert and transcode media with rvio

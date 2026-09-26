@@ -2,9 +2,9 @@
 name: rv-review
 description: Loads images and media into RV / OpenRV for review, dailies and approval. Splits stacked comparison sheets into a labelled flipbook, opens stills, renders, playblasts, movies, image sequences, multi-view or stereo EXRs and 360 images as a sequence, wipe, difference or tile, and reads RV's state back to confirm the load. Also compares baseline and candidate folders (visual regression failures, UI and app screenshots, web pages at several breakpoints, SVG icons, design vs build) with difference frames, saves and renders .rv sessions, and returns the reviewer's annotations as JSON for other skills such as production trackers. Use whenever images or renders should be compared, reviewed or approved, or the user asks to open or flip through them in RV, even if RV is not named. Not for converting media, listing sequences, RV packages, editing images, or writing tests.
 license: MIT
-compatibility: Needs a local desktop session with RV or OpenRV (rv and rvpush) and Python 3.10+; the image scripts also need numpy and Pillow. Optional, detected, never installed - Playwright or Chrome / Edge (web capture, SVG), resvg / CairoSVG / Inkscape (SVG), Xcode simctl or adb (mobile capture). Works on Windows, macOS and Linux.
+compatibility: Needs a local desktop session with RV or OpenRV (rv and rvpush) and Python 3.9 or later; the image scripts also need numpy and Pillow. Optional, detected, never installed - Playwright or Chrome / Edge (web capture, SVG), resvg / CairoSVG / Inkscape (SVG), Xcode simctl or adb (mobile capture). Works on Windows, macOS and Linux.
 metadata:
-  version: 0.2.0
+  version: 0.2.1
 ---
 
 # Review media in RV
@@ -35,7 +35,7 @@ box. Every script prints one JSON line.
 | `scripts/rasterize.py SVG ... --out DIR` | SVG to PNG with the first renderer found (RV cannot read SVG) |
 | `scripts/web_capture.py PAGE ... --out DIR` | web pages or local HTML at named breakpoints (Playwright, else Chrome / Edge) |
 | `scripts/app_capture.py ios\|android\|electron` | the current app screen in several appearances, text sizes, display sizes |
-| `scripts/rv_review.py` | loads sources, a `--manifest` / `--frames-json`, or a `.rv` into the review window (tag `rv-review`), sets layout, stereo, views and marks, reads the state and RV's log back. Exit 0 verified, 1 error, 2 bad arguments, 3 loaded but differs or RV logged errors |
+| `scripts/rv_review.py` | loads sources, a `--manifest` / `--frames-json`, or a `.rv` into the review window (tag `rv-review`), sets layout, stereo, views and marks, reads the state and RV's log back; `--selftest` checks the frame keys. Exit 0 verified, 1 error, 2 bad arguments, 3 loaded but differs or RV logged errors |
 | `scripts/rv_session.py write\|check\|render` | writes, checks (gtoinfo) and renders (rvio) `.rv` sessions |
 
 RV is found through `--rv-bin`, `RV_BIN`, `RVPUSH_RV_EXECUTABLE_PATH`, `RV_PATH`, `RV_APP_RV`,
@@ -74,10 +74,16 @@ Copy this checklist into the reply and tick it off:
    `--stereo pair --stereo-views left,right`, `--latlong`, `--save-session review.rv`. Bracket
    groups go after `--`: `-- [ left.exr right.exr ] [ shot.mov -in 10 -out 50 ]`. Read
    `references/media-types.md` before loading movies, sequences, multi-view, stereo or 360.
-4. **Verify.** The script compares RV's sources, marks, view and stereo mode with what it
-   loaded and collects RV's ERROR / WARNING log lines. On exit 3, run the same command once
-   more; if `problems` or `errors` persist, report them instead of saying the review is ready.
-   `python scripts/rv_review.py --state` reads the state at any time.
+4. **Verify.** The script compares RV's sources, marks, view, stereo mode and, for stacks,
+   the composite, wipe and wipe edge with what it loaded, and collects RV's ERROR / WARNING
+   log lines. On exit 3, run the same command once more; if `problems` or `errors` persist,
+   report them instead of saying the review is ready.
+   `python scripts/rv_review.py --state` reads the state at any time. If the user says the
+   arrow keys do nothing, run `python scripts/rv_review.py --selftest` (needs 2+ frames): it
+   sends Left / Right / Alt+Left / Alt+Right through RV's event tables, checks the frame
+   moves as the table below says and goes back to the starting frame. When it is `ok`, the
+   bindings work and the key presses are not reaching RV: click into the RV window first;
+   remote-desktop and screen-sharing clients can keep Alt / Option for themselves.
 5. **Report** with the template below. After the review, `python scripts/rv_review.py --notes`
    returns the reviewer's annotations per item (add `--export-annotated DIR` for images).
 
@@ -95,7 +101,7 @@ Then the keys:
 | Key | Action |
 |---|---|
 | Left / Right | previous / next frame (flip versions) |
-| Alt+Left / Alt+Right | previous / next mark (jump between views, pairs or sources) |
+| Alt (Option on macOS)+Left / Right | previous / next mark (jump between views, pairs or sources); with no later mark, Alt+Right goes to the last frame |
 | Ctrl+Left / Ctrl+Right | loop just one view's or source's frames |
 | Space | play (one still per second; movies at their own rate) |
 | F, 1 | fit the frame (tall pages), 1:1 pixels |
@@ -122,7 +128,8 @@ Then the keys:
 - **The last number in a file name is a frame number.** A single `views3.exr` loads as frame 3;
   split frames put the running index last for this reason.
 - **Stereo, wipes and the 360 view persist in a refreshed window;** the script resets them on
-  every load. Shift+drag in the 360 view needs a window launched with `--latlong`.
+  every load. A wipe opens split down the middle (first source left, second right); the
+  user drags the edge to move it. Shift+drag in the 360 view needs a window launched with `--latlong`.
 - **`#` starts a comment in POSIX shells;** quote sequence specs.
 - **`--info-strip`** (F7) makes RV save the strip as on in its preferences when it exits.
 - **Never update test baselines or tracker statuses on your own**; do it for the items the

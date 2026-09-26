@@ -27,6 +27,9 @@ lists only a short fixed set (dvvideo, mjpeg, rawvideo, pcm_s16be). Run
 as prores, dnxhd, dvvideo and aac are disabled unless the build lists them in
 `RV_FFMPEG_NON_FREE_ENCODERS_TO_ENABLE`; H.264 is never linked). "Tested build" is the
 Windows OpenRV 3.1.0 build this skill was checked with, which had several of them enabled.
+A stock-style OpenRV 3.0.0 build on macOS wrote mjpeg, mpeg4, png, mpeg1video, cfhd, v210,
+v410, jpeg2000 and tiff, and refused the others with either `ERROR: Unsupported codec: <name>`
+or `ERROR: Invalid video codec: <name>`, depending on the codec (`verified-commands.md`).
 
 Audio: PCM (`pcm_s16be` default, `pcm_s16le`, `pcm_s24le`) works. `aac` failed with a muxer
 timestamp error. Audio-only outputs `.wav` and `.aiff` worked; `.mp3` failed ("Failed to

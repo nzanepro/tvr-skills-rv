@@ -68,7 +68,7 @@ so it works with OpenRV and with Autodesk RV / ShotGrid RV.
 | Need | Check |
 |---|---|
 | RV or OpenRV with `rv` and `rvpush` (see [See also](#see-also) for building OpenRV) | `rv -help` (Windows: `rv.exe -help`) |
-| Python 3.10 or later | `python --version` |
+| Python 3.9 or later | `python --version` (macOS: `python3 --version`) |
 | numpy and Pillow, for splitting sheets | `python -c "import numpy, PIL"` |
 | Optional: Playwright or Chrome / Edge (web capture, SVG); resvg, rsvg-convert, CairoSVG or Inkscape (SVG); Xcode simctl or adb (mobile) | detected at run time; nothing is installed |
 | A local desktop session (RV opens a window) | |
@@ -154,7 +154,7 @@ it does not trigger on its own, ask for the rv-review skill by name.
 | Key in RV | Action |
 |---|---|
 | Left / Right | previous / next frame (flip versions) |
-| Alt+Left / Alt+Right | previous / next mark (jump between views or sources) |
+| Alt (Option on macOS)+Left / Right | previous / next mark (jump between views or sources); with no later mark, Alt+Right goes to the last frame |
 | Ctrl+Left / Ctrl+Right | loop one view's or source's frames |
 | Space | play (stills at one per second, movies at their own rate) |
 | Shift+drag | look around in the 360 view |
@@ -247,6 +247,15 @@ runs are in [`rv-review/references/rv-commands.md`](rv-review/references/rv-comm
   run again.
 - **The skill does not trigger**: ask for the rv-review skill by name, or use the slash
   command.
+- **The arrow keys do nothing**: run `python rv-review/scripts/rv_review.py --selftest` on a
+  review with two or more frames. It sends Left / Right / Alt+Left / Alt+Right through RV's
+  own event tables (no keyboard focus or macOS Accessibility permission needed), checks the
+  frame moves as documented and goes back to where it was. If it passes, the bindings work
+  and the key presses are not reaching RV: click into the RV window first; remote-desktop and
+  screen-sharing clients can keep Alt / Option for themselves. On macOS, Alt is the Option key.
+- **A wipe shows only one image**: 0.2.1 and later open the wipe split down the middle
+  (first source left, second right). In a window loaded by an older version, drag the wipe
+  edge in from the side of the frame.
 
 ## Development
 
