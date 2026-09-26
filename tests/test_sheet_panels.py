@@ -9,24 +9,43 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 MIN_PANEL_WIDTH = 400  # keeps max(64, width // 8) == 64 for every sheet below
 
 
-def build_sheet(path, *, width=MIN_PANEL_WIDTH, bg, title_color, title_h=30, gap=8,
-                 panel_colors, panel_h=100, marker_color=(255, 255, 0), marker=10):
-    """Write a stacked contact sheet: a title band, then one panel per colour in
-    panel_colors (all the same height), each separated -- and followed -- by a
-    full-width run of background-coloured rows. Each panel gets a small marker
-    box so its own content can be told apart from its neighbours'.
+def _font(size):
+    try:
+        return ImageFont.truetype("arial.ttf", size)
+    except OSError:
+        try:
+            return ImageFont.truetype("DejaVuSans.ttf", size)
+        except OSError:
+            return ImageFont.load_default()
 
-    Returns (title_box, panel_boxes) where title_box is (left, top, right, bottom)
-    for the title band *including* the background gap after it (this is exactly
-    what sheet_panels.panels_of treats as the title), and panel_boxes is a list
-    of (left, top, right, bottom) for each panel, in the same order as panel_colors.
+
+def build_sheet(path, *, width=MIN_PANEL_WIDTH, bg, title_color, title_h=30, gap=8,
+                 panel_colors, panel_h=100, title=None, labels=None):
+    """Write a stacked contact sheet like the ones the skill reviews: a title band
+    with a line of text, then one panel per colour in panel_colors (all the same
+    height), each with a black label box holding white label text, separated --
+    and followed -- by full-width runs of background-coloured rows.
+
+    title defaults to "<stem>: comparison"; labels default to the last tokens of
+    the file name (the same rule sheet_panels uses to name the frames).
+
+    Returns (title_box, panel_boxes, label_boxes): title_box is (left, top, right,
+    bottom) for the title band *including* the background gap after it (exactly
+    what sheet_panels.panels_of treats as the title); panel_boxes and label_boxes
+    are (left, top, right, bottom) per panel, in panel_colors order.
     """
+    path = Path(path)
     n = len(panel_colors)
+    if title is None:
+        title = f"{path.stem.split('_')[0]}: comparison"
+    if labels is None:
+        toks = path.stem.split("_")
+        labels = toks[-n:] if len(toks) > n else [str(i + 1) for i in range(n)]
     total_h = title_h + gap + n * (panel_h + gap)
     im = Image.new("RGB", (width, total_h), bg)
     d = ImageDraw.Draw(im)
@@ -34,16 +53,22 @@ def build_sheet(path, *, width=MIN_PANEL_WIDTH, bg, title_color, title_h=30, gap
     # band must leave that corner alone -- start it a few rows down, like a real
     # title band whose top-left corner is background with text drawn elsewhere.
     d.rectangle([0, 4, width - 1, title_h - 1], fill=title_color)
+    d.text((8, 7), title, fill=(235, 235, 235), font=_font(16))
     title_box = (0, 0, width, title_h + gap)
     y = title_h + gap
-    panel_boxes = []
-    for color in panel_colors:
+    panel_boxes, label_boxes = [], []
+    small = _font(14)
+    for color, text in zip(panel_colors, labels):
         d.rectangle([0, y, width - 1, y + panel_h - 1], fill=color)
-        d.rectangle([4, y + 4, 4 + marker - 1, y + 4 + marker - 1], fill=marker_color)
+        tw = d.textbbox((10, y + 8), text, font=small)[2]
+        box = (4, y + 4, tw + 6, y + 28)
+        d.rectangle(box, fill=(0, 0, 0))
+        d.text((10, y + 8), text, fill=(255, 255, 255), font=small)
         panel_boxes.append((0, y, width, y + panel_h))
+        label_boxes.append((box[0], box[1], box[2] + 1, box[3] + 1))
         y += panel_h + gap
     im.save(path)
-    return title_box, panel_boxes
+    return title_box, panel_boxes, label_boxes
 
 
 def read_frames_json(out_dir):
@@ -108,7 +133,7 @@ def test_every_frame_has_the_title_band_and_its_own_panel(tmp_path, sp):
     # A single sheet needs no cross-sheet padding, so each frame's un-padded
     # content should be an exact pixel match for [title band][that panel].
     sheet = tmp_path / "shotA_red_green_blue.png"
-    title_box, panel_boxes = build_sheet(
+    title_box, panel_boxes, _ = build_sheet(
         sheet, bg=(30, 30, 30), title_color=(90, 90, 200),
         panel_colors=[(200, 40, 40), (40, 200, 40), (40, 40, 200)])
     src = np.asarray(Image.open(sheet).convert("RGB"))
@@ -123,6 +148,41 @@ def test_every_frame_has_the_title_band_and_its_own_panel(tmp_path, sp):
         expected_panel = src[box[1]:box[3], box[0]:box[2]]
         assert np.array_equal(frame[0:title_h], expected_title)
         assert np.array_equal(frame[title_h:title_h + (box[3] - box[1])], expected_panel)
+
+
+def test_title_text_and_each_label_survive_the_split(tmp_path, sp):
+    # The review depends on the burnt-in text: every frame must carry the sheet's
+    # title line, and frame N must carry panel N's label box (not a neighbour's).
+    sheet = tmp_path / "shotA_red_green_blue.png"
+    title_box, panel_boxes, label_boxes = build_sheet(
+        sheet, bg=(30, 30, 30), title_color=(90, 90, 200), title="shotA: lighting pass",
+        panel_colors=[(200, 40, 40), (40, 200, 40), (40, 40, 200)])
+    src = np.asarray(Image.open(sheet).convert("RGB"))
+    title_h = title_box[3] - title_box[1]
+    title_px = src[title_box[1]:title_box[3], title_box[0]:title_box[2]]
+    # the title band really holds text: light text pixels on the band colour
+    assert (title_px.min(axis=2) > 200).sum() > 50
+
+    paths = sp.split([str(sheet)], tmp_path / "out")
+    data = read_frames_json(tmp_path / "out")
+    assert data["views"][0]["labels"] == ["red", "green", "blue"]
+
+    crops = []
+    for path, pbox, lbox in zip(paths, panel_boxes, label_boxes):
+        frame = np.asarray(Image.open(path).convert("RGB"))
+        assert np.array_equal(frame[0:title_h], title_px)
+        # label box position inside the frame = its offset within the panel
+        top = title_h + (lbox[1] - pbox[1])
+        got = frame[top:top + (lbox[3] - lbox[1]), lbox[0]:lbox[2]]
+        want = src[lbox[1]:lbox[3], lbox[0]:lbox[2]]
+        assert np.array_equal(got, want)
+        assert (got.min(axis=2) > 200).sum() > 10          # white label text present
+        crops.append(got)
+    # the three labels differ, so no frame picked up a neighbour's label
+    heads = [c[:, :24] for c in crops]                    # same-size crop of each label's text
+    for i in range(len(heads)):
+        for j in range(i + 1, len(heads)):
+            assert not np.array_equal(heads[i], heads[j])
 
 
 def test_frames_padded_centred_to_largest_size_with_sheet_background(tmp_path, sp):
