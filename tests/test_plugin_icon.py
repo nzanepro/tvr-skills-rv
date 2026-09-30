@@ -1,10 +1,11 @@
 """The plugin icon, .claude-plugin/icon.svg.
 
-Anthropic's plugin directory looks for the icon there (ICON_MISSING otherwise) and wants it
-square and at least 128 px. It is shown on listings next to other publishers' icons, so it
+Anthropic's plugin directory looks for the icon there or at plugin.json's `icon` (ICON_MISSING
+otherwise; plugin.json sets both) and wants it square and at least 128 px. It is shown on listings next to other publishers' icons, so it
 must be self-contained: no scripts, no event handlers, no raster images, no fonts or text,
 and no reference to anything outside the file.
 """
+import json
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -72,3 +73,10 @@ def test_icon_internal_references_resolve(root):
         for value in el.attrib.values():
             for ref in re.findall(r"url\(#([^)]+)\)", value):
                 assert ref in ids, f"url(#{ref}) points at no element"
+
+
+def test_plugin_json_icon_points_at_the_icon():
+    plugin = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    icon = plugin.get("icon")
+    assert isinstance(icon, str) and icon.startswith("./"), f"icon={icon!r}"
+    assert (REPO_ROOT / icon).resolve() == ICON.resolve()

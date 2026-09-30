@@ -9,6 +9,7 @@
   "homepage": "https://github.com/nzanepro/tvr-skills-rv",
   "repository": "https://github.com/nzanepro/tvr-skills-rv",
   "license": "MIT",
+  "icon": "./.claude-plugin/icon.svg",
   "keywords": [
     "rv",
     "openrv",

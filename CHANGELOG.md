@@ -15,7 +15,7 @@ Fixes for two findings of Anthropic's plugin directory, and documentation; no sk
 
 ### Added
 
-- A plugin icon, icon.svg in `.claude-plugin/` (the directory reported `ICON_MISSING`): a hand-written 256 x 256 SVG in the README demo's colours, showing stacked review frames, the front one split by a wipe between a grey and a copper sphere, over a green timeline bar. `tests/test_plugin_icon.py` checks that it is a square SVG of at least 128 px with no text, scripts, raster images or external references.
+- A plugin icon, icon.svg in `.claude-plugin/`, which `icon` in `plugin.json` also names (the directory reported `ICON_MISSING`): a hand-written 256 x 256 SVG in the README demo's colours, showing stacked review frames, the front one split by a wipe between a grey and a copper sphere, over a green timeline bar. `tests/test_plugin_icon.py` checks that it is a square SVG of at least 128 px with no text, scripts, raster images or external references.
 - A "What it runs and what it sends" section in the README: what the scripts start, which environment variables they read (only to find programs), where they write, and that `web_capture.py` loads the pages you give it in a local headless browser. `SECURITY.md` now names that exception to "no network calls".
 - CI runs `claude plugin validate --strict` on the repository and on `plugin.json` with a pinned Claude Code (2.1.284).
 - `scripts/check_repo.py` has a `readme-listing` check: no shell variable or command substitution in the README, and no repository image path in backticks or a code block in any Markdown file.
