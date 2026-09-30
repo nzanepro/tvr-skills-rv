@@ -2,9 +2,9 @@
 name: rvpkg
 description: "Manages RV / OpenRV packages (.rvpkg plugins) with the rvpkg command-line tool: lists what is available, installed, loaded or optional in each support area, adds, installs, uninstalls, removes and opts packages in, reads package details, and sets up RV_SUPPORT_PATH areas. Use when an RV plugin or package must be installed, removed, enabled or checked. Not for converting media (rvio), listing image sequences (rvls), or viewing media in RV (rv-review)."
 license: MIT
-compatibility: Needs RV or OpenRV (rvpkg) and Python 3.9 or later for the helper scripts (standard library only); rvpkg_list.py --parse also works on saved output without RV. Works on Windows, macOS and Linux.
+compatibility: Needs RV or OpenRV (rvpkg) and Python 3.9 or later for the helper scripts (standard library only); rvpkg_list.py --parse also works on saved output without RV. Desktop only (Claude Code CLI, desktop app or IDE extension on Windows, macOS or Linux); not claude.ai in a browser or the iOS / Android apps, which cannot run RV on your machine.
 metadata:
-  version: 0.1.1
+  version: 0.1.2
 ---
 
 # Manage RV packages with rvpkg

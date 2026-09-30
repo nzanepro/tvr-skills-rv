@@ -2,9 +2,9 @@
 name: rvls
 description: "Lists and inspects image sequences and movies with RV / OpenRV's rvls command-line tool: sequences collapsed to frame ranges, missing frames and gaps, resolution, bit depth, channels, fps, codec, timecode, audio, and full file headers and metadata for EXR, DPX, TIFF, MOV and MP4. Use to see what is on disk or to check that a render, copy or conversion wrote the expected frames. Not for converting media (rvio), RV packages (rvpkg), or viewing in RV (rv-review)."
 license: MIT
-compatibility: Needs RV or OpenRV (rvls) and Python 3.9 or later for the helper scripts (standard library only); rvls_check.py --parse also works on saved rvls output without RV. Works on Windows, macOS and Linux.
+compatibility: Needs RV or OpenRV (rvls) and Python 3.9 or later for the helper scripts (standard library only); rvls_check.py --parse also works on saved rvls output without RV. Desktop only (Claude Code CLI, desktop app or IDE extension on Windows, macOS or Linux); not claude.ai in a browser or the iOS / Android apps, which cannot run RV on your machine.
 metadata:
-  version: 0.1.1
+  version: 0.1.2
 ---
 
 # List and inspect sequences with rvls

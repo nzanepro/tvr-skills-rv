@@ -2,9 +2,9 @@
 name: rv-review
 description: Loads images and media into RV / OpenRV for review, dailies and approval. Splits stacked comparison sheets into a labelled flipbook, opens stills, renders, playblasts, movies, image sequences, multi-view or stereo EXRs and 360 images as a sequence, wipe, difference or tile, and reads RV's state back to confirm the load. Also compares baseline and candidate folders (visual regression failures, UI and app screenshots, web pages at several breakpoints, SVG icons, design vs build) with difference frames, saves and renders .rv sessions, and returns the reviewer's annotations as JSON for other skills such as production trackers. Use whenever images or renders should be compared, reviewed or approved, or the user asks to open or flip through them in RV, even if RV is not named. Not for converting media, listing sequences, RV packages, editing images, or writing tests.
 license: MIT
-compatibility: Needs a local desktop session with RV or OpenRV (rv and rvpush) and Python 3.9 or later; the image scripts also need numpy and Pillow. Optional, detected, never installed - Playwright or Chrome / Edge (web capture, SVG), resvg / CairoSVG / Inkscape (SVG), Xcode simctl or adb (mobile capture). Works on Windows, macOS and Linux.
+compatibility: Needs a local desktop session with RV or OpenRV (rv and rvpush) and Python 3.9 or later; the image scripts also need numpy and Pillow. Optional, detected, never installed - Playwright or Chrome / Edge (web capture, SVG), resvg / CairoSVG / Inkscape (SVG), Xcode simctl or adb (mobile capture). Desktop only (Claude Code CLI, desktop app or IDE extension on Windows, macOS or Linux); not claude.ai in a browser or the iOS / Android apps, which cannot run RV on your machine.
 metadata:
-  version: 0.2.2
+  version: 0.2.3
 ---
 
 # Review media in RV
