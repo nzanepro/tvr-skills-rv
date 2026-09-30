@@ -35,8 +35,8 @@ screen must have the same relative path) and keep variant names short: they beco
 3. `python scripts/rv_review.py --frames-json review/visual/frames.json`.
 4. The reviewer flips expected / actual / diff per failure (most changed first) and says which
    changes are intended.
-5. Update baselines only for the ones the user approved (for Playwright
-   `npx playwright test --update-snapshots` limited to those tests; for the others their own
+5. Update baselines only for the ones the user approved (for Playwright the project's own
+   `playwright test --update-snapshots`, limited to those tests; for the others their own
    update flag), never all at once on your own.
 
 `compare_report.md` is ready to paste into a PR comment. RV does not replace hosted review

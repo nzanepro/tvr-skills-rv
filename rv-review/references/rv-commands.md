@@ -30,8 +30,9 @@ nohup rv -network -networkTag rv-review before.png after.png v2.png >/dev/null 2
 ```
 
 ```powershell
-# Windows PowerShell: wrap every path in literal double quotes (spaces, & and () are fine)
-Start-Process -FilePath "$rvbin\rv.exe" -ArgumentList '-network','-networkTag','rv-review','"C:\review\before.png"','"C:\review\after.png"'
+# Windows PowerShell: -FilePath is your install's rv.exe; wrap every media path in literal
+# double quotes (spaces, & and () are fine)
+Start-Process -FilePath 'C:\Program Files\OpenRV\bin\rv.exe' -ArgumentList '-network','-networkTag','rv-review','"C:\review\before.png"','"C:\review\after.png"'
 ```
 
 Every `rv` launch opens a new window; reuse one only through rvpush. Wait until RV answers
@@ -41,7 +42,7 @@ before pushing: `RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review py-eval-re
 Every rvpush command on this page sets `RVPUSH_RV_EXECUTABLE_PATH=none`: plain rvpush starts
 a new RV of its own when no RV answers the tag (exit 15, and that RV is tied to the calling
 shell). With `none` it exits 11 instead. In PowerShell set it once per session with
-`$env:RVPUSH_RV_EXECUTABLE_PATH = 'none'` and drop the prefix.
+`Set-Item Env:RVPUSH_RV_EXECUTABLE_PATH none` and drop the prefix.
 
 ## Replace or add media
 
@@ -189,7 +190,7 @@ Alt / Option for themselves.
 | `RV_BIN` | you | this skill's own: folder holding rv and rvpush |
 | `RVPUSH_RV_EXECUTABLE_PATH` | you | rv executable rvpush starts when no RV answers; `none` = never start one |
 | `RV_PATH` | you | rv executable; read by RV's Nuke integration |
-| `RV_HOME` | Linux `rv` / `rvpush` wrapper scripts, or you | install root (`$RV_HOME/bin`); not set on Windows or macOS |
+| `RV_HOME` | Linux `rv` / `rvpush` wrapper scripts, or you | install root, with rv in its `bin` folder; not set on Windows or macOS |
 | `RV_APP_RV` | RV, for processes it starts | path of the running rv executable |
 | `RV_SUPPORT_PATH` | you | support folders (packages, Mu, Python); not the executable |
 | `RV_PREFS_OVERRIDE_PATH`, `RV_PREFS_CLOBBER_PATH` | you | default / forced preference files |

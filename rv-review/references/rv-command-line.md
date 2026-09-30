@@ -32,8 +32,8 @@ Media arguments follow the same rules as rvio: sequences as `name.#.exr`, `name.
 space on each side of each bracket, for example `[ left.#.exr right.#.exr ]` for a stereo
 pair or `[ -in 1010 -out 1050 plate.mov ]`.
 
-Init scripts are looked up in this order: `-init`, `$RV_INIT`, `~/.rvrc.mu`, then
-`<install>/scripts/rv/rvrc.mu` (and the matching `rvrc.py`).
+Init scripts are looked up in this order: `-init`, the `RV_INIT` environment variable,
+`~/.rvrc.mu`, then `<install>/scripts/rv/rvrc.mu` (and the matching `rvrc.py`).
 
 ## rvpush: talk to a running RV
 
@@ -43,8 +43,9 @@ from its own bin folder (or `RVPUSH_RV_EXECUTABLE_PATH`; set that to `none` to n
 one). *verified: help text and exit codes below.*
 
 Run every command below with `RVPUSH_RV_EXECUTABLE_PATH=none` set (bash:
-`RVPUSH_RV_EXECUTABLE_PATH=none rvpush ...`; PowerShell: `$env:RVPUSH_RV_EXECUTABLE_PATH =
-'none'` once), or a plain rvpush starts a new RV whenever none answers the tag.
+`RVPUSH_RV_EXECUTABLE_PATH=none rvpush ...`; PowerShell:
+`Set-Item Env:RVPUSH_RV_EXECUTABLE_PATH none` once), or a plain rvpush starts a new RV
+whenever none answers the tag.
 
 ```text
 rvpush [-tag T] set   <media args>        replace the session's media
