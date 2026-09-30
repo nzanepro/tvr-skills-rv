@@ -6,7 +6,6 @@ their neighbours (compare_dirs imports sheet_panels, rv_review imports review_ma
 rv_session, and so on).
 """
 import importlib.util
-import os
 import shutil
 import sys
 from pathlib import Path
@@ -92,12 +91,22 @@ def ac():
     return load_script("app_capture")
 
 
-def find_rv_bin():
-    """Folder holding rv / gtoinfo / rvio when RV is installed (RV_BIN, PATH), else None.
-    Real-tool tests skip without it; they never open an RV window."""
-    for cand in (os.environ.get("RV_BIN"), os.path.dirname(shutil.which("rv") or "") or None):
-        if cand and Path(cand).is_dir():
-            return Path(cand)
+def pytest_addoption(parser):
+    parser.addoption("--rv-bin", metavar="DIR", default=None,
+                     help="RV bin folder for the tests that run real RV tools (gtoinfo, "
+                          "rvio); default: the rv-review lookup (config file, PATH, the "
+                          "usual install folders)")
+
+
+def find_rv_bin(rv_bin=None):
+    """Folder holding rv / gtoinfo / rvio when RV is installed (--rv-bin, then the lookup
+    rv_review.py uses), else None. Real-tool tests skip without it; they never open an RV
+    window."""
+    if rv_bin:
+        return Path(rv_bin) if Path(rv_bin).is_dir() else None
+    hit = shutil.which("rv")
+    if hit:
+        return Path(hit).parent
     try:
         rr = _load_rv_review()
         rv, _ = rr.find_rv()
@@ -107,8 +116,8 @@ def find_rv_bin():
 
 
 @pytest.fixture()
-def rv_bin():
-    b = find_rv_bin()
+def rv_bin(request):
+    b = find_rv_bin(request.config.getoption("--rv-bin"))
     if b is None:
-        pytest.skip("RV / OpenRV not installed")
+        pytest.skip("RV / OpenRV not installed (or pass --rv-bin DIR)")
     return b
