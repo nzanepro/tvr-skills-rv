@@ -3,10 +3,12 @@
 ## What this project does and does not do
 
 Every script in this repository runs **locally**, with your own user permissions, and talks
-only to RV / OpenRV on the same machine (through `rv`, `rvpush`, `rvio`, `rvls` and `rvpkg` on
-`PATH` or a path you give it). Nothing here:
+to RV / OpenRV on the same machine (through `rv`, `rvpush`, `rvio`, `rvls` and `rvpkg` on
+`PATH` or a path you give it). The only exception is `rv-review`'s `web_capture.py`: when
+asked, it opens the web pages you give it in a local headless browser, which loads them like
+any browser visit. Nothing here:
 
-- makes network calls itself,
+- makes network calls itself, other than those page loads,
 - uploads images, renders, or file paths anywhere,
 - installs or downloads RV/OpenRV, packages, or any other software on its own, or
 - needs, stores, or asks for credentials, tokens, or account details.

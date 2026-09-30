@@ -260,6 +260,35 @@ The launcher prints one JSON line; exit status 0 means loaded and verified, 1 an
 message says what to try), 3 loaded but the read-back differed. The rv / rvpush commands it
 runs are in [`rv-review/references/rv-commands.md`](rv-review/references/rv-commands.md).
 
+## What it runs and what it sends
+
+- **No hooks, servers or background jobs.** The plugin is four skills. Their Python scripts
+  run only when the agent (or you) runs them, with your own permissions, and install nothing.
+  They read environment variables only to find programs: RV's (below), `CHROME_PATH`,
+  `PLAYWRIGHT_BROWSERS_PATH`, `ANDROID_HOME` / `ANDROID_SDK_ROOT`, and each OS's standard
+  folder variables (Program Files, AppData, XDG, the home folder).
+- **RV on this computer.** The scripts find RV and its tools (see
+  [How the launcher finds RV](#how-the-launcher-finds-rv)), start `rv` detached with
+  networking on under a tag, and talk to it through `rvpush`, which connects to the RV
+  running on the same computer. `rvio`, `rvls` and `rvpkg` run locally; `rvpkg_list.py` only
+  reads, and packages are added or removed only when you ask.
+- **Files.** Frames, reports and sessions go to the folders you name (`--out`,
+  `--save-session`, `--export-annotated`). Otherwise the scripts write only the RV log of the
+  review window and short-lived working folders in the system temp folder.
+- **Web pages, only when you ask.** `web_capture.py` opens the URLs you give it in a local
+  headless browser (Playwright, Chrome, Chromium or Edge), which loads those pages like any
+  browser visit, and saves screenshots. `rasterize.py` renders local SVG files. No other
+  script uses the network.
+- **Devices, only when you ask.** `app_capture.py` drives a booted iOS simulator (`xcrun
+  simctl`), an Android device or emulator (`adb`) or an Electron app, changes appearance or
+  text size for the capture and puts it back afterwards.
+- **Nothing is sent anywhere else.** No telemetry, no uploads and no credentials: rv-review
+  never talks to a production tracker itself (see [Using rv-review from other
+  skills](#using-rv-review-from-other-skills)). What you ask for goes to the model like any
+  other prompt.
+
+See [SECURITY.md](SECURITY.md) to report a problem.
+
 ## Troubleshooting
 
 - **"RV not found"**: pass `--rv-bin <folder with rv and rvpush>` or set `RV_BIN`; on macOS
