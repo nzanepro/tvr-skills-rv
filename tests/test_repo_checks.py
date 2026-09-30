@@ -189,6 +189,86 @@ def test_marketplace_skills_paths_passes_when_all_present(cr, tmp_path, monkeypa
     assert cr.check_marketplace_skills_paths() == []
 
 
+def _write_plugin_repo(tmp_path, entry, plugin_json=None, skill_dirs=("example-skill",)):
+    """A synthetic marketplace repo with one relative-path plugin at the root."""
+    (tmp_path / ".claude-plugin").mkdir()
+    for name in skill_dirs:
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "SKILL.md").write_text(f"---\nname: {name}\n---\n", encoding="utf-8")
+    manifest = {"name": "example-marketplace", "plugins": [entry]}
+    (tmp_path / ".claude-plugin" / "marketplace.json").write_text(json.dumps(manifest), encoding="utf-8")
+    if plugin_json is not None:
+        (tmp_path / ".claude-plugin" / "plugin.json").write_text(json.dumps(plugin_json), encoding="utf-8")
+
+
+def test_marketplace_skills_paths_reads_skills_from_plugin_json(cr, tmp_path, monkeypatch):
+    _write_plugin_repo(
+        tmp_path,
+        {"name": "example", "source": "./"},
+        {"name": "example", "skills": ["./example-skill"]},
+    )
+    monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
+
+    assert cr.check_marketplace_skills_paths() == []
+
+
+def test_marketplace_skills_paths_flags_missing_skill_in_plugin_json(cr, tmp_path, monkeypatch):
+    _write_plugin_repo(
+        tmp_path,
+        {"name": "example", "source": "./"},
+        {"name": "example", "skills": ["./example-skill", "./gone"]},
+    )
+    monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
+
+    problems = cr.check_marketplace_skills_paths()
+
+    assert [p.path for p in problems] == [".claude-plugin/plugin.json"]
+    assert "'./gone' does not exist" in problems[0].detail
+
+
+def test_marketplace_skills_paths_flags_conflicting_manifests(cr, tmp_path, monkeypatch):
+    """A plugin.json next to a "strict": false entry that also lists skills does not load in
+    Claude Code ("Plugin <name> has conflicting manifests")."""
+    _write_plugin_repo(
+        tmp_path,
+        {"name": "example", "source": "./", "strict": False, "skills": ["./example-skill"]},
+        {"name": "example", "skills": ["./example-skill"]},
+    )
+    monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
+
+    problems = cr.check_marketplace_skills_paths()
+
+    assert any("conflicting manifests" in p.detail for p in problems)
+
+
+def test_marketplace_skills_paths_flags_plugin_name_mismatch(cr, tmp_path, monkeypatch):
+    _write_plugin_repo(
+        tmp_path,
+        {"name": "example", "source": "./"},
+        {"name": "other-name", "skills": ["./example-skill"]},
+    )
+    monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
+
+    problems = cr.check_marketplace_skills_paths()
+
+    assert any("does not match the marketplace entry" in p.detail for p in problems)
+
+
+def test_real_plugin_keeps_its_names_and_skills():
+    """Users install `rv@tvr-skills-rv` and run `/rv:<skill>`, and release zips and tests use
+    the skill folders at the repository root, so none of these may change by accident."""
+    marketplace = json.loads((REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
+    plugin = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    assert marketplace["name"] == "tvr-skills-rv"
+    assert [entry["name"] for entry in marketplace["plugins"]] == ["rv"]
+    entry = marketplace["plugins"][0]
+    assert entry["source"] == "./"
+    assert plugin["name"] == "rv"
+    assert plugin["skills"] == ["./rv-review", "./rvio", "./rvls", "./rvpkg"]
+    # plugin.json is the manifest: the entry declares no components and no second version.
+    assert not any(key in entry for key in ("skills", "commands", "agents", "hooks", "strict", "version"))
+
+
 @pytest.mark.parametrize(
     "line",
     [

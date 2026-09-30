@@ -11,8 +11,12 @@ Checks:
    compatibility, metadata.version), the name matches its folder, and the file is
    short enough that an agent reading it in full is cheap (under 500 lines, per
    CONTRIBUTING.md's style rule).
-2. .claude-plugin/marketplace.json's "skills" entries all point at folders that
-   exist and hold a SKILL.md (so a plugin install cannot point at a missing skill).
+2. Every skill a plugin declares -- in its own .claude-plugin/plugin.json and in its
+   .claude-plugin/marketplace.json entry -- points at a folder that exists and holds a
+   SKILL.md (so a plugin install cannot point at a missing skill), the entry and the
+   manifest agree on the plugin's name, and the two are not declared in a way Claude
+   Code rejects as "conflicting manifests" (a "strict": false entry that also lists
+   components next to a plugin.json).
 3. No tracked, non-binary file contains a personal file path, this project's own
    development machine/user names, an email address, or a small list of words tied
    to the author's unrelated private projects that must never leak into this public
@@ -245,6 +249,19 @@ def check_skill_frontmatter() -> list[Problem]:
     return problems
 
 
+# Keys that declare components; a "strict": false marketplace entry may not set any of them
+# when the plugin also has a plugin.json.
+COMPONENT_KEYS = ("commands", "agents", "skills", "hooks", "outputStyles", "themes")
+
+
+def _as_list(value) -> list:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return list(value)
+
+
 def check_marketplace_skills_paths() -> list[Problem]:
     problems: list[Problem] = []
     manifest_path = REPO_ROOT / ".claude-plugin" / "marketplace.json"
@@ -259,29 +276,66 @@ def check_marketplace_skills_paths() -> list[Problem]:
 
     for plugin in manifest.get("plugins", []):
         plugin_name = plugin.get("name", "<unnamed plugin>")
-        skills = plugin.get("skills", [])
-        if not skills:
-            problems.append(Problem("marketplace-skills", rel, f"plugin '{plugin_name}' lists no skills"))
         plugin_source = plugin.get("source", "./")
-        for skill_ref in skills:
-            skill_dir = (REPO_ROOT / plugin_source / skill_ref).resolve()
-            try:
-                skill_dir.relative_to(REPO_ROOT)
-            except ValueError:
-                problems.append(
-                    Problem("marketplace-skills", rel, f"plugin '{plugin_name}' skill path '{skill_ref}' escapes the repo")
-                )
-                continue
-            if not skill_dir.is_dir():
-                problems.append(
-                    Problem("marketplace-skills", rel, f"plugin '{plugin_name}' skill path '{skill_ref}' does not exist")
-                )
-                continue
-            if not (skill_dir / "SKILL.md").is_file():
-                problems.append(
-                    Problem("marketplace-skills", rel, f"plugin '{plugin_name}' skill path '{skill_ref}' has no SKILL.md")
-                )
+        if not isinstance(plugin_source, str):
+            continue  # a github / url / npm source: its files are not in this repo
+        plugin_root = REPO_ROOT / plugin_source
+        entry_skills = _as_list(plugin.get("skills"))
 
+        plugin_json = plugin_root / ".claude-plugin" / "plugin.json"
+        plugin_json_rel = os.path.relpath(str(plugin_json), str(REPO_ROOT)).replace(os.sep, "/")
+        skill_sources = [(rel, entry_skills)]
+        if plugin_json.is_file():
+            try:
+                plugin_manifest = json.loads(plugin_json.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                problems.append(Problem("marketplace-skills", plugin_json_rel, f"invalid JSON: {exc}"))
+                continue
+            manifest_name = plugin_manifest.get("name")
+            if manifest_name != plugin.get("name"):
+                problems.append(
+                    Problem("marketplace-skills", plugin_json_rel,
+                            f"name '{manifest_name}' does not match the marketplace entry '{plugin_name}'")
+                )
+            conflicting = [key for key in COMPONENT_KEYS if key in plugin]
+            if plugin.get("strict") is False and conflicting:
+                problems.append(
+                    Problem("marketplace-skills", rel,
+                            f"plugin '{plugin_name}' is \"strict\": false and lists {', '.join(conflicting)} "
+                            f"next to {plugin_json_rel}; Claude Code refuses to load it (conflicting manifests). "
+                            "Declare components in plugin.json only.")
+                )
+            skill_sources.insert(0, (plugin_json_rel, _as_list(plugin_manifest.get("skills"))))
+
+        if not any(skills for _, skills in skill_sources) and not (plugin_root / "skills").is_dir():
+            problems.append(Problem("marketplace-skills", rel, f"plugin '{plugin_name}' lists no skills"))
+
+        for source_rel, skills in skill_sources:
+            problems.extend(_check_skill_refs(source_rel, plugin_name, plugin_root, skills))
+
+    return problems
+
+
+def _check_skill_refs(rel: str, plugin_name: str, plugin_root: Path, skills: list) -> list[Problem]:
+    problems: list[Problem] = []
+    for skill_ref in skills:
+        skill_dir = (plugin_root / skill_ref).resolve()
+        try:
+            skill_dir.relative_to(REPO_ROOT.resolve())
+        except ValueError:
+            problems.append(
+                Problem("marketplace-skills", rel, f"plugin '{plugin_name}' skill path '{skill_ref}' escapes the repo")
+            )
+            continue
+        if not skill_dir.is_dir():
+            problems.append(
+                Problem("marketplace-skills", rel, f"plugin '{plugin_name}' skill path '{skill_ref}' does not exist")
+            )
+            continue
+        if not (skill_dir / "SKILL.md").is_file():
+            problems.append(
+                Problem("marketplace-skills", rel, f"plugin '{plugin_name}' skill path '{skill_ref}' has no SKILL.md")
+            )
     return problems
 
 
