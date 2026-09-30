@@ -18,9 +18,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 BINARY_SUFFIXES = {".png", ".gif", ".jpg", ".jpeg", ".webp", ".ico", ".pyc", ".zip"}
 
 MAPPING = "env" + "iron"
-ENV_READS = re.compile("|".join([MAPPING, "get" + "env", "expand" + "vars",
-                                 re.escape("process." + "env"),
-                                 "(?<![A-Za-z0-9/])" + "env" + ":[A-Za-z_]"]), re.IGNORECASE)
+# code forms only: the English word in prose ("environment") is not a read
+ENV_READS = re.compile("|".join([
+    r"\b" + MAPPING + r"b?\s*[\[.]",
+    r"\bos\s*\.\s*" + MAPPING,
+    r"\bimport\s+" + MAPPING + r"\b",
+    r"\bimport\s+.*,\s*" + MAPPING + r"\b",
+    r"\bget" + r"env\s*\(",
+    r"\bexpand" + r"vars\s*\(",
+    r"\bprocess\s*\.\s*" + "env" + r"\b",
+    r"(?i:(?<![A-Za-z0-9/])" + "env" + r":[A-Za-z_])",
+]))
 # a dollar sign before a name, a brace or a parenthesis, or a name between percent signs;
 # Claude Code's own plugin-option substitution (dollar, brace, user_config.) is allowed
 SHELL_VARIABLE = re.compile("[$](?:[A-Za-z_(]|[{](?!user_config[.]))|%[A-Za-z_][A-Za-z0-9_]*%")
@@ -69,7 +77,9 @@ def test_the_guard_patterns_catch_each_form():
     for sample in ("costs " + dollar + "5M", "50" + percent + " of", "a " + dollar + " b",
                    "[" + dollar + "{user_config.rv_bin}]"):
         assert not SHELL_VARIABLE.search(sample), sample
-    for sample in ("#!/usr/bin/" + "env python3", "envelope(body)", "/usr/bin/" + "env RV=none"):
+    for sample in ("#!/usr/bin/" + "env python3", "envelope(body)", "/usr/bin/" + "env RV=none",
+                   "fostering an " + MAPPING + "ment that respects", "shell " + MAPPING + "ment variables",
+                   "the " + MAPPING.capitalize() + "ment variables section"):
         assert not ENV_READS.search(sample), sample
 
 

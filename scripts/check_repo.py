@@ -545,14 +545,21 @@ def check_personal_paths() -> list[Problem]:
 # same way), or a name between percent signs (cmd.exe). Claude Code's own plugin-option
 # substitution, a dollar sign and a brace before user_config., is not a shell variable.
 SHELL_VARIABLE_PATTERN = re.compile(r"[$](?:[A-Za-z_(]|[{](?!user_config[.]))|%[A-Za-z_][A-Za-z0-9_()]*%")
-# Reads of the process's variables, built from pieces so this file never spells one: the
-# Python mapping's name (which also covers its getter's module attribute), the getter,
-# variable expansion, Node's process mapping and PowerShell's variable drive.
+# Reads of the process's variables in code, built from pieces so this file never spells one:
+# the Python mapping used as a mapping, imported or reached through os, its getter, variable
+# expansion, Node's process mapping and PowerShell's variable drive. The English word alone
+# (in prose, "environment") is not a read and is not matched.
 _MAPPING = "env" + "iron"
-ENV_READ_PATTERN = re.compile(
-    "|".join([_MAPPING, "get" + "env", "expand" + "vars", re.escape("process." + "env"),
-              "(?<![A-Za-z0-9/])" + "env" + ":[A-Za-z_]"]),
-    re.IGNORECASE)
+ENV_READ_PATTERN = re.compile("|".join([
+    r"\b" + _MAPPING + r"b?\s*[\[.]",
+    r"\bos\s*\.\s*" + _MAPPING,
+    r"\bimport\s+" + _MAPPING + r"\b",
+    r"\bimport\s+.*,\s*" + _MAPPING + r"\b",
+    r"\bget" + r"env\s*\(",
+    r"\bexpand" + r"vars\s*\(",
+    r"\bprocess\s*\.\s*" + "env" + r"\b",
+    r"(?i:(?<![A-Za-z0-9/])" + "env" + r":[A-Za-z_])",
+]))
 WORKFLOWS_DIR = ".github/workflows/"
 IMAGE_EXTS = {".png", ".gif", ".jpg", ".jpeg", ".webp", ".svg"}
 CODE_SPAN = re.compile(r"`([^`\n]+)`")

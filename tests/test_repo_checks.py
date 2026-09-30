@@ -589,7 +589,8 @@ ENV_READ_SAMPLES = [
     "os.path.expand" + "vars('~/x')",
     "const x = process." + "env.X;",
     "Set-Item E" + "nv:X none",
-    "set the " + MAPPING.capitalize() + "ment variable",
+    "x = " + MAPPING + "['X']",
+    "import sys, " + MAPPING,
 ]
 
 
@@ -610,6 +611,9 @@ def test_no_env_reads_flags_each_form(cr, tmp_path, monkeypatch, line):
     "Plugin setting: [" + DOLLAR + "{user_config.rv_bin}]",
     "costs " + DOLLAR + "5, 50" + PERCENT + " off",
     "envelope(body)",
+    "We are committed to fostering an " + MAPPING + "ment that respects",
+    "which " + MAPPING + "ment variables they read (only to find programs).",
+    "## " + MAPPING.capitalize() + "ment variables",
 ])
 def test_no_env_reads_accepts_the_allowed_forms(cr, tmp_path, monkeypatch, line):
     (tmp_path / "tool.py").write_text(line + "\n", encoding="utf-8")
