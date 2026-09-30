@@ -11,14 +11,15 @@ skill versions it changed.
 
 ## [0.2.3] - 2026-09-29
 
-Packaging and documentation only; no skill changed.
+Packaging and documentation; no script or skill behaviour changed.
 
 ### Added
 
 - `.claude-plugin/plugin.json`, the plugin's own manifest (name, version, description, author, homepage, repository, license, keywords and the four skill folders), which Anthropic's plugin directory requires. The marketplace entry now defers to it and keeps only its name, source, description, category and tags. Install and skill names are unchanged: `rv@tvr-skills-rv`, `/rv:rv-review`, `/rv:rvio`, `/rv:rvls`, `/rv:rvpkg`.
 - Releases are published by `.github/workflows/release.yml` when a `v*` tag is pushed: `scripts/build_release.py` builds the per-skill zips from the tagged commit (LF line endings) and the release notes from this changelog.
-- `scripts/check_repo.py` checks that every `SKILL.md` frontmatter is valid YAML (for example, no unquoted value containing `: `), that `plugin.json`, the marketplace file and this changelog agree on the version, and that the marketplace entry and `plugin.json` do not conflict. The tests also parse each frontmatter with PyYAML and strictyaml.
+- More checks in `scripts/check_repo.py`: every `SKILL.md` frontmatter must be valid YAML (for example, no unquoted value containing `: `) and fit the Agent Skills length limits for `name`, `description` and `compatibility`; `plugin.json`, the marketplace file and this changelog must agree on the version; and the marketplace entry and `plugin.json` must not conflict. The tests also parse each frontmatter with PyYAML and strictyaml.
 - A code of conduct (Contributor Covenant 3.0), with reports through GitHub's reporting tools.
+- Where the plugin works, stated up front: Claude Code on a Windows, macOS or Linux computer (CLI, desktop app or IDE extension) with RV or OpenRV installed, not claude.ai in a web browser or the iOS and Android apps, which cannot start RV. It is in a "Where it works" note at the top of the README (with a pointer to openrv-build-plugin for building OpenRV), in the plugin description and in each skill's `compatibility` field.
 
 ### Fixed
 
@@ -28,7 +29,7 @@ Packaging and documentation only; no skill changed.
 
 ### Changed
 
-- Versions: plugin 0.2.3. Skills unchanged: rv-review 0.2.2; rvio, rvls and rvpkg 0.1.1.
+- Versions: plugin 0.2.3; rv-review 0.2.3; rvio, rvls and rvpkg 0.1.2 (only their `compatibility` text changed).
 
 ## [0.2.2] - 2026-09-26
 
