@@ -19,9 +19,10 @@ window and is fast (a fraction of a second per folder).
 python scripts/rv_find.py --path rvls    # or without --path for every RV tool as JSON
 ```
 
-Search order: `--rv-bin`, `RV_BIN`, `RVPUSH_RV_EXECUTABLE_PATH`, `RV_PATH`, `RV_APP_RV`,
-`RV_HOME`, `PATH`, the Windows registry, then the usual install folders. If nothing is found,
-ask the user where RV is installed and pass `--rv-bin`.
+Search order: `--rv-bin`, `rv_bin` in `~/.config/tvr-skills-rv/config.json`, `PATH`, the
+Windows registry, the usual install folders, then an OpenRV built from source (`~/OpenRV`,
+or the checkout you are in). No environment variable is read. If nothing is found, ask the
+user where RV is installed and pass `--rv-bin`.
 
 ## Scripts
 

@@ -1,11 +1,12 @@
 """Tests for rv_find.py (identical copies in rvio/scripts, rvls/scripts, rvpkg/scripts).
 
 rv_find.py is a standalone script (no sibling imports of its own), so it is loaded by file
-path with importlib. All discovery-order tests build a fake install tree in tmp_path and pass
-explicit env / platform / home / root / registry, so behaviour is independent of the host OS
+path with importlib. All discovery-order tests build a fake install tree in tmp_path and pass explicit
+platform / home / root / registry / which / cwd, so behaviour is independent of the host OS
 and of whatever is really installed on the machine running the suite.
 """
 import importlib.util
+import json
 import os
 from pathlib import Path
 
@@ -86,99 +87,79 @@ class TestExeNames:
         assert rvfind.os_kind("linux") == "linux"
 
 
-# --- discovery order: full precedence chain ---------------------------------------------
+# --- discovery order ------------------------------------------------------------------------
+
+def which_in(folder):
+    """A shutil.which stand-in that finds names only in folder (host PATH never leaks in)."""
+    folder = Path(folder)
+
+    def which(name):
+        p = folder / name
+        return str(p) if p.is_file() else None
+    return which
+
+
+def no_which(name):
+    return None
+
+
+def where(tmp_path, **kw):
+    """Keyword arguments that keep find_rv away from the real machine: an empty home and
+    root, no config, no PATH hits, no registry and a current folder with no OpenRV above."""
+    cwd = tmp_path / "cwd"
+    cwd.mkdir(exist_ok=True)
+    base = {"home": tmp_path / "home", "root": tmp_path / "root", "registry": lambda: None,
+            "which": no_which, "cwd": cwd}
+    base.update(kw)
+    return base
+
 
 class TestPrecedenceChain:
-    """--rv-bin beats RV_BIN beats RVPUSH beats RV_PATH beats RV_APP_RV beats RV_HOME
-    beats PATH beats install folders (registry is covered separately, windows-only)."""
+    """--rv-bin beats the config file beats PATH beats the registry (Windows) beats the
+    install folders beats an OpenRV build."""
 
     def test_chain(self, tmp_path, rvfind):
-        # PATH lookup depends on the REAL host's shutil.which conventions (PATHEXT on
-        # Windows, exec bit on POSIX), independent of the platform this test simulates
-        # everywhere else, so name the fake tools the way the real host can find them.
-        plat = "win32" if os.name == "nt" else "linux"
-        home = tmp_path / "home"
-        root = tmp_path / "root"
-        if plat == "win32":
-            pf = tmp_path / "Program Files"
-            install_dir = pf / "OpenRV-1.0" / "bin"
-            env = {"ProgramFiles": str(pf)}
-        else:
-            install_dir = root / "opt" / "rv-1.0" / "bin"
-            env = {}
+        plat = "linux"
+        home, root = tmp_path / "home", tmp_path / "root"
+        checkout = home / "OpenRV"
+        (checkout).mkdir(parents=True)
+        (checkout / "rvcmds.sh").write_text("")
+        build_dir = checkout / "_build" / "stage" / "app" / "bin"
+        make_tool(build_dir, "rvio", plat)
+        kw = where(tmp_path, platform=plat)
+        bin_dir, source, _ = rvfind.find_rv("rvio", **kw)
+        assert (bin_dir, source) == (build_dir, "OpenRV build")
+
+        install_dir = root / "opt" / "rv-1.0" / "bin"
         make_tool(install_dir, "rvio", plat)
-        bin_dir, source, _ = rvfind.find_rv("rvio", env=env, platform=plat, home=home,
-                                            root=root, registry=lambda: None)
+        bin_dir, source, _ = rvfind.find_rv("rvio", **kw)
         assert (bin_dir, source) == (install_dir, "install folder")
 
         path_dir = tmp_path / "path_bin"
         make_tool(path_dir, "rvio", plat)
-        env["PATH"] = str(path_dir)
-        bin_dir, source, _ = rvfind.find_rv("rvio", env=env, platform=plat, home=home,
-                                            root=root, registry=lambda: None)
+        kw["which"] = which_in(path_dir)
+        bin_dir, source, _ = rvfind.find_rv("rvio", **kw)
         assert (bin_dir, source) == (path_dir, "PATH")
 
-        home_root = tmp_path / "rv_home_root"
-        make_tool(home_root / "bin", "rvio", plat)
-        env["RV_HOME"] = str(home_root)
-        bin_dir, source, _ = rvfind.find_rv("rvio", env=env, platform=plat, home=home,
-                                            root=root, registry=lambda: None)
-        assert (bin_dir, source) == (home_root / "bin", "RV_HOME")
-
-        app_rv_dir = tmp_path / "app_rv_dir"
-        make_tool(app_rv_dir, "rvio", plat)
-        env["RV_APP_RV"] = str(app_rv_dir / "rv")   # rv itself need not exist
-        bin_dir, source, _ = rvfind.find_rv("rvio", env=env, platform=plat, home=home,
-                                            root=root, registry=lambda: None)
-        assert (bin_dir, source) == (app_rv_dir, "RV_APP_RV")
-
-        rv_path_dir = tmp_path / "rv_path_dir"
-        make_tool(rv_path_dir, "rvio", plat)
-        env["RV_PATH"] = str(rv_path_dir / "rv")
-        bin_dir, source, _ = rvfind.find_rv("rvio", env=env, platform=plat, home=home,
-                                            root=root, registry=lambda: None)
-        assert (bin_dir, source) == (rv_path_dir, "RV_PATH")
-
-        rvpush_dir = tmp_path / "rvpush_dir"
-        make_tool(rvpush_dir, "rvio", plat)
-        env["RVPUSH_RV_EXECUTABLE_PATH"] = str(rvpush_dir / "rv")
-        bin_dir, source, _ = rvfind.find_rv("rvio", env=env, platform=plat, home=home,
-                                            root=root, registry=lambda: None)
-        assert (bin_dir, source) == (rvpush_dir, "RVPUSH_RV_EXECUTABLE_PATH")
-
-        rv_bin_dir = tmp_path / "rv_bin_env_dir"
-        make_tool(rv_bin_dir, "rvio", plat)
-        env["RV_BIN"] = str(rv_bin_dir)
-        bin_dir, source, _ = rvfind.find_rv("rvio", env=env, platform=plat, home=home,
-                                            root=root, registry=lambda: None)
-        assert (bin_dir, source) == (rv_bin_dir, "RV_BIN")
+        config_dir = tmp_path / "config_bin"
+        make_tool(config_dir, "rvio", plat)
+        rvfind.config_path(home).parent.mkdir(parents=True)
+        rvfind.config_path(home).write_text(json.dumps({"rv_bin": str(config_dir)}))
+        bin_dir, source, _ = rvfind.find_rv("rvio", **kw)
+        assert (bin_dir, source) == (config_dir, "config")
 
         arg_bin_dir = tmp_path / "arg_bin_dir"
         make_tool(arg_bin_dir, "rvio", plat)
-        bin_dir, source, _ = rvfind.find_rv("rvio", rv_bin=str(arg_bin_dir), env=env,
-                                            platform=plat, home=home, root=root,
-                                            registry=lambda: None)
+        bin_dir, source, _ = rvfind.find_rv("rvio", rv_bin=str(arg_bin_dir), **kw)
         assert (bin_dir, source) == (arg_bin_dir, "--rv-bin")
 
-    def test_rvpush_none_is_ignored(self, tmp_path, rvfind):
-        plat = "linux"
-        rv_path_dir = tmp_path / "rv_path_dir"
-        make_tool(rv_path_dir, "rvio", plat)
-        env = {"RVPUSH_RV_EXECUTABLE_PATH": "none", "RV_PATH": str(rv_path_dir / "rv")}
-        bin_dir, source, _ = rvfind.find_rv("rvio", env=env, platform=plat,
-                                            home=tmp_path / "home", root=tmp_path / "root",
-                                            registry=lambda: None)
-        assert (bin_dir, source) == (rv_path_dir, "RV_PATH")
-
-    def test_rv_home_dot_app_maps_to_contents_macos(self, tmp_path, rvfind):
-        plat = "darwin"
-        app = tmp_path / "RV.app"
-        make_tool(app / "Contents" / "MacOS", "rvio", plat)
-        env = {"RV_HOME": str(app)}
-        bin_dir, source, _ = rvfind.find_rv("rvio", env=env, platform=plat,
-                                            home=tmp_path / "home", root=tmp_path / "root",
-                                            registry=lambda: None)
-        assert (bin_dir, source) == (app / "Contents" / "MacOS", "RV_HOME")
+    def test_candidates_order(self, tmp_path, rvfind):
+        path_dir = tmp_path / "path_bin"
+        make_tool(path_dir, "rvio", "linux")
+        cands = rvfind.candidates(rv_bin=str(tmp_path / "argbin"),
+                                  config={"rv_bin": str(tmp_path / "cfgbin")},
+                                  **where(tmp_path, platform="linux", which=which_in(path_dir)))
+        assert [c[0] for c in cands][:3] == ["--rv-bin", "config", "PATH"]
 
 
 class TestRegistryPrecedence:
@@ -186,107 +167,190 @@ class TestRegistryPrecedence:
 
     def test_registry_beats_install_folder(self, tmp_path, rvfind):
         plat = "win32"
-        pf = tmp_path / "Program Files"
+        pf = tmp_path / "root" / "Program Files"
         install_dir = pf / "OpenRV-1.0" / "bin"
         make_tool(install_dir, "rvio", plat)
-        env = {"ProgramFiles": str(pf)}
-        bin_dir, source, _ = rvfind.find_rv("rvio", env=env, platform=plat,
-                                            home=tmp_path / "home", root=tmp_path / "root",
-                                            registry=lambda: None)
+        bin_dir, source, _ = rvfind.find_rv("rvio", **where(tmp_path, platform=plat))
         assert (bin_dir, source) == (install_dir, "install folder")
 
         reg_dir = tmp_path / "registry_bin"
         make_tool(reg_dir, "rvio", plat)
-        bin_dir, source, _ = rvfind.find_rv("rvio", env=env, platform=plat,
-                                            home=tmp_path / "home", root=tmp_path / "root",
-                                            registry=lambda: str(reg_dir / "rv.exe"))
+        bin_dir, source, _ = rvfind.find_rv("rvio", **where(
+            tmp_path, platform=plat, registry=lambda: str(reg_dir / "rv.exe")))
         assert (bin_dir, source) == (reg_dir, "registry")
 
     def test_path_beats_registry(self, tmp_path, rvfind):
         plat = "win32"
-        env = {}
         reg_dir = tmp_path / "registry_bin"
         make_tool(reg_dir, "rvio", plat)
         path_dir = tmp_path / "path_bin"
         make_tool(path_dir, "rvio", plat)
-        env["PATH"] = str(path_dir)
-        bin_dir, source, _ = rvfind.find_rv("rvio", env=env, platform=plat,
-                                            home=tmp_path / "home", root=tmp_path / "root",
-                                            registry=lambda: str(reg_dir / "rv.exe"))
+        bin_dir, source, _ = rvfind.find_rv("rvio", **where(
+            tmp_path, platform=plat, which=which_in(path_dir),
+            registry=lambda: str(reg_dir / "rv.exe")))
         assert (bin_dir, source) == (path_dir, "PATH")
 
-
-# --- candidates() order, directly ---------------------------------------------------------
-
-def test_candidates_order_lists_named_sources_first(tmp_path, rvfind):
-    plat = "linux"
-    env = {"RV_BIN": str(tmp_path / "rvbin"),
-           "RVPUSH_RV_EXECUTABLE_PATH": str(tmp_path / "push" / "rv"),
-           "RV_PATH": str(tmp_path / "rvpath" / "rv"),
-           "RV_APP_RV": str(tmp_path / "apprv" / "rv"),
-           "RV_HOME": str(tmp_path / "rvhome")}
-    cands = rvfind.candidates(rv_bin=str(tmp_path / "argbin"), env=env, platform=plat,
-                              home=tmp_path / "home", root=tmp_path / "root",
-                              registry=lambda: None)
-    sources = [c[0] for c in cands]
-    expected_prefix = ["--rv-bin", "RV_BIN", "RVPUSH_RV_EXECUTABLE_PATH", "RV_PATH",
-                       "RV_APP_RV", "RV_HOME"]
-    assert sources[:len(expected_prefix)] == expected_prefix
+    def test_registry_not_consulted_on_linux(self, tmp_path, rvfind):
+        reg_dir = tmp_path / "registry_bin"
+        make_tool(reg_dir, "rvio", "linux")
+        with pytest.raises(rvfind.RvNotFound):
+            rvfind.find_rv("rvio", **where(tmp_path, platform="linux",
+                                           registry=lambda: str(reg_dir / "rvio")))
 
 
-# --- --rv-bin / RV_BIN forms --------------------------------------------------------------
+# --- --rv-bin / config forms ------------------------------------------------------------------
 
 class TestRvBinForms:
-    """--rv-bin (and RV_BIN) accept an install root, a bin folder, an .app bundle or a tool
-    file directly."""
+    """--rv-bin (and rv_bin in the config file) accept an install root, a bin folder, an .app
+    bundle or a tool file directly."""
 
     def test_install_root(self, tmp_path, rvfind):
         root_dir = tmp_path / "install_root"
         make_tool(root_dir / "bin", "rvio", "linux")
-        bin_dir, source, _ = rvfind.find_rv("rvio", rv_bin=str(root_dir), env={},
-                                            platform="linux", home=tmp_path / "home",
-                                            root=tmp_path / "root", registry=lambda: None)
+        bin_dir, source, _ = rvfind.find_rv("rvio", rv_bin=str(root_dir),
+                                            **where(tmp_path, platform="linux"))
         assert (bin_dir, source) == (root_dir / "bin", "--rv-bin")
 
     def test_bin_folder_directly(self, tmp_path, rvfind):
         bin_dir_path = tmp_path / "just_bin"
         make_tool(bin_dir_path, "rvio", "linux")
-        bin_dir, source, _ = rvfind.find_rv("rvio", rv_bin=str(bin_dir_path), env={},
-                                            platform="linux", home=tmp_path / "home",
-                                            root=tmp_path / "root", registry=lambda: None)
+        bin_dir, source, _ = rvfind.find_rv("rvio", rv_bin=str(bin_dir_path),
+                                            **where(tmp_path, platform="linux"))
         assert (bin_dir, source) == (bin_dir_path, "--rv-bin")
 
     def test_app_bundle(self, tmp_path, rvfind):
         app = tmp_path / "OpenRV.app"
         make_tool(app / "Contents" / "MacOS", "rvio", "darwin")
-        bin_dir, source, _ = rvfind.find_rv("rvio", rv_bin=str(app), env={},
-                                            platform="darwin", home=tmp_path / "home",
-                                            root=tmp_path / "root", registry=lambda: None)
+        bin_dir, source, _ = rvfind.find_rv("rvio", rv_bin=str(app),
+                                            **where(tmp_path, platform="darwin"))
         assert (bin_dir, source) == (app / "Contents" / "MacOS", "--rv-bin")
 
     def test_tool_file(self, tmp_path, rvfind):
         bin_dir_path = tmp_path / "bin_for_file"
         tool_path = make_tool(bin_dir_path, "rvio", "linux")
-        bin_dir, source, _ = rvfind.find_rv("rvio", rv_bin=str(tool_path), env={},
-                                            platform="linux", home=tmp_path / "home",
-                                            root=tmp_path / "root", registry=lambda: None)
+        bin_dir, source, _ = rvfind.find_rv("rvio", rv_bin=str(tool_path),
+                                            **where(tmp_path, platform="linux"))
         assert (bin_dir, source) == (bin_dir_path, "--rv-bin")
 
     def test_wrong_rv_bin_raises_with_flag_name(self, tmp_path, rvfind):
         empty = tmp_path / "empty"
         empty.mkdir()
+        path_dir = tmp_path / "path_bin"
+        make_tool(path_dir, "rvio", "linux")
         with pytest.raises(rvfind.RvNotFound, match="--rv-bin"):
-            rvfind.find_rv("rvio", rv_bin=str(empty), env={}, platform="linux",
-                           home=tmp_path / "home", root=tmp_path / "root",
-                           registry=lambda: None)
+            rvfind.find_rv("rvio", rv_bin=str(empty),
+                           **where(tmp_path, platform="linux", which=which_in(path_dir)))
 
-    def test_wrong_rv_bin_env_raises_with_var_name(self, tmp_path, rvfind):
+    def test_wrong_config_rv_bin_raises_naming_the_file(self, tmp_path, rvfind):
         empty = tmp_path / "empty2"
         empty.mkdir()
-        env = {"RV_BIN": str(empty)}
-        with pytest.raises(rvfind.RvNotFound, match="RV_BIN"):
-            rvfind.find_rv("rvio", env=env, platform="linux", home=tmp_path / "home",
-                           root=tmp_path / "root", registry=lambda: None)
+        path_dir = tmp_path / "path_bin"
+        make_tool(path_dir, "rvio", "linux")
+        with pytest.raises(rvfind.RvNotFound, match="config.json"):
+            rvfind.find_rv("rvio", config={"rv_bin": str(empty)},
+                           **where(tmp_path, platform="linux", which=which_in(path_dir)))
+
+    def test_config_tilde_is_the_home_folder(self, tmp_path, rvfind):
+        home = tmp_path / "home"
+        make_tool(home / "rv" / "bin", "rvio", "linux")
+        bin_dir, source, _ = rvfind.find_rv("rvio", config={"rv_bin": "~/rv"},
+                                            **where(tmp_path, platform="linux"))
+        assert (bin_dir, source) == (home / "rv" / "bin", "config")
+
+
+class TestConfigFile:
+    def test_path_is_under_the_home_folder(self, tmp_path, rvfind):
+        assert rvfind.config_path(tmp_path) == tmp_path / ".config" / "tvr-skills-rv" / "config.json"
+
+    def test_missing_file_is_empty(self, tmp_path, rvfind):
+        assert rvfind.load_config(tmp_path) == {}
+
+    @pytest.mark.parametrize("text", ["{not json", "[1, 2]", '{"rv_bin": 3}'])
+    def test_broken_file_is_an_error_naming_it(self, tmp_path, rvfind, text):
+        path = rvfind.config_path(tmp_path)
+        path.parent.mkdir(parents=True)
+        path.write_text(text)
+        with pytest.raises(rvfind.ConfigError, match="config.json"):
+            rvfind.load_config(tmp_path)
+        with pytest.raises(rvfind.RvNotFound, match="config file problem"):
+            rvfind.find_rv("rvio", **where(tmp_path, platform="linux", home=tmp_path))
+
+    def test_broken_file_is_not_read_when_rv_bin_answers(self, tmp_path, rvfind):
+        path = rvfind.config_path(tmp_path / "home")
+        path.parent.mkdir(parents=True)
+        path.write_text("{not json")
+        folder = tmp_path / "bin"
+        make_tool(folder, "rvio", "linux")
+        bin_dir, source, _ = rvfind.find_rv("rvio", rv_bin=str(folder),
+                                            **where(tmp_path, platform="linux"))
+        assert (bin_dir, source) == (folder, "--rv-bin")
+
+
+# --- OpenRV built from source -------------------------------------------------------------------
+
+class TestOpenRvBuild:
+    """The openrv-build plugin leaves a source checkout (with rvcmds.sh at its top) and a
+    staged build under _build/stage/app; nothing else marks it."""
+
+    def _checkout(self, folder):
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "rvcmds.sh").write_text("")
+        return folder
+
+    def test_macos_app_in_home_openrv(self, tmp_path, rvfind):
+        checkout = self._checkout(tmp_path / "home" / "OpenRV")
+        macos = checkout / "_build" / "stage" / "app" / "RV.app" / "Contents" / "MacOS"
+        make_tool(macos, "rv", "darwin")
+        bin_dir, source, _ = rvfind.find_rv("rv", **where(tmp_path, platform="darwin"))
+        assert (bin_dir, source) == (macos, "OpenRV build")
+
+    def test_linux_bin_found_from_a_folder_inside_the_checkout(self, tmp_path, rvfind):
+        checkout = self._checkout(tmp_path / "src" / "OpenRV")
+        build_bin = checkout / "_build" / "stage" / "app" / "bin"
+        make_tool(build_bin, "rvio", "linux")
+        inside = checkout / "src" / "lib"
+        inside.mkdir(parents=True)
+        bin_dir, source, _ = rvfind.find_rv("rvio", **where(tmp_path, platform="linux",
+                                                            cwd=inside))
+        assert (bin_dir, source) == (build_bin, "OpenRV build")
+
+    def test_windows_drive_openrv(self, tmp_path, rvfind):
+        checkout = self._checkout(tmp_path / "root" / "OpenRV")
+        build_bin = checkout / "_build" / "stage" / "app" / "bin"
+        make_tool(build_bin, "rvio", "win32")
+        bin_dir, source, _ = rvfind.find_rv("rvio", **where(tmp_path, platform="win32"))
+        assert (bin_dir, source) == (build_bin, "OpenRV build")
+
+    def test_folder_without_marker_is_not_a_build(self, tmp_path, rvfind):
+        folder = tmp_path / "home" / "OpenRV"
+        make_tool(folder / "_build" / "stage" / "app" / "bin", "rvio", "linux")
+        with pytest.raises(rvfind.RvNotFound, match="OpenRV build"):
+            rvfind.find_rv("rvio", **where(tmp_path, platform="linux"))
+
+    def test_roots_are_cwd_parents_then_home_then_windows_drive(self, tmp_path, rvfind):
+        cwd = tmp_path / "a" / "b"
+        roots = rvfind.openrv_build_roots("win32", home=tmp_path / "home",
+                                          root=tmp_path / "root", cwd=cwd)
+        assert roots[:3] == [cwd, cwd.parent, cwd.parent.parent]
+        assert roots[-2:] == [tmp_path / "home" / "OpenRV", tmp_path / "root" / "OpenRV"]
+
+
+# --- Windows folders ---------------------------------------------------------------------------
+
+def test_program_files_under_a_test_root_are_literal(tmp_path, rvfind):
+    assert rvfind.program_files_dirs(tmp_path) == [tmp_path / "Program Files",
+                                                   tmp_path / "Program Files (x86)"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="known folders exist on Windows")
+def test_known_folder_is_none_off_windows(rvfind):
+    assert rvfind.known_folder(rvfind.FOLDERID_PROGRAM_FILES[0]) is None
+
+
+def test_install_patterns_take_injected_program_files(tmp_path, rvfind):
+    pats = rvfind.install_patterns("win32", program_files=lambda: [tmp_path / "PF"])
+    assert str(tmp_path / "PF" / "OpenRV*" / "bin") in pats
+    assert all(p.startswith(str(tmp_path / "PF")) for p in pats)
 
 
 # --- install folder version ordering ------------------------------------------------------
@@ -294,93 +358,71 @@ class TestRvBinForms:
 class TestInstallFolderOrdering:
     def test_windows_autodesk_newest_first(self, tmp_path, rvfind):
         plat = "win32"
-        pf = tmp_path / "Program Files"
+        pf = tmp_path / "root" / "Program Files"
         make_tool(pf / "Autodesk" / "RV-2024.9" / "bin", "rvio", plat)
         make_tool(pf / "Autodesk" / "RV-2024.10" / "bin", "rvio", plat)
-        env = {"ProgramFiles": str(pf)}
-        bin_dir, source, _ = rvfind.find_rv("rvio", env=env, platform=plat,
-                                            home=tmp_path / "home", root=tmp_path / "root",
-                                            registry=lambda: None)
+        bin_dir, source, _ = rvfind.find_rv("rvio", **where(tmp_path, platform=plat))
         assert (bin_dir, source) == (pf / "Autodesk" / "RV-2024.10" / "bin", "install folder")
+
+    def test_windows_program_files_x86(self, tmp_path, rvfind):
+        plat = "win32"
+        pf86 = tmp_path / "root" / "Program Files (x86)"
+        make_tool(pf86 / "Shotgun" / "RV-7.0" / "bin", "rvio", plat)
+        bin_dir, source, _ = rvfind.find_rv("rvio", **where(tmp_path, platform=plat))
+        assert (bin_dir, source) == (pf86 / "Shotgun" / "RV-7.0" / "bin", "install folder")
 
     def test_linux_openrv_newest_first(self, tmp_path, rvfind):
         plat = "linux"
         root = tmp_path / "root"
         make_tool(root / "opt" / "OpenRV-3.1" / "bin", "rvio", plat)
         make_tool(root / "opt" / "OpenRV-3.2" / "bin", "rvio", plat)
-        bin_dir, source, _ = rvfind.find_rv("rvio", env={}, platform=plat,
-                                            home=tmp_path / "home", root=root,
-                                            registry=lambda: None)
+        bin_dir, source, _ = rvfind.find_rv("rvio", **where(tmp_path, platform=plat))
         assert (bin_dir, source) == (root / "opt" / "OpenRV-3.2" / "bin", "install folder")
 
     def test_macos_home_applications(self, tmp_path, rvfind):
         plat = "darwin"
         home = tmp_path / "home"
         make_tool(home / "Applications" / "OpenRV-1.0.app" / "Contents" / "MacOS", "rvio", plat)
-        bin_dir, source, _ = rvfind.find_rv("rvio", env={}, platform=plat, home=home,
-                                            root=tmp_path / "root", registry=lambda: None)
+        bin_dir, source, _ = rvfind.find_rv("rvio", **where(tmp_path, platform=plat))
         expected = home / "Applications" / "OpenRV-1.0.app" / "Contents" / "MacOS"
         assert (bin_dir, source) == (expected, "install folder")
 
 
-# --- PATH lookup: host-dependent exe naming ------------------------------------------------
+# --- PATH lookup through the real shutil.which ---------------------------------------------------
 
 class TestPathLookup:
-    """shutil.which() reads the real host PATHEXT/exec bits, not the simulated `platform`
-    argument, so a bare (no-extension) name can only be found on a POSIX host."""
+    """Without an injected which, the lookup is shutil.which itself; the test points it at
+    one folder by patching the module's shutil.which."""
 
-    def test_windows_exe_names_found_on_any_host(self, tmp_path, rvfind):
-        plat = "win32"
-        d = tmp_path / "pathdir_win"
-        make_tool(d, "rvio", plat)
-        env = {"PATH": str(d)}
-        bin_dir, source, _ = rvfind.find_rv("rvio", env=env, platform=plat,
-                                            home=tmp_path / "home", root=tmp_path / "root",
-                                            registry=lambda: None)
-        assert (bin_dir, source) == (d, "PATH")
+    def test_default_which_is_shutil_which(self, tmp_path, rvfind, monkeypatch):
+        d = tmp_path / "pathdir"
+        tool = make_tool(d, "rvio", None)          # None -> name for the real host
+        calls = []
 
-    def test_posix_bare_names_need_posix_host(self, tmp_path, rvfind):
-        if os.name == "nt":
-            pytest.skip("bare-name PATH lookup needs a POSIX host (Windows shutil.which "
-                        "requires a PATHEXT-matching extension)")
-        plat = "linux"
-        d = tmp_path / "pathdir_posix"
-        make_tool(d, "rvio", plat)
-        env = {"PATH": str(d)}
-        bin_dir, source, _ = rvfind.find_rv("rvio", env=env, platform=plat,
-                                            home=tmp_path / "home", root=tmp_path / "root",
-                                            registry=lambda: None)
+        def fake_which(name):
+            calls.append(name)
+            return str(tool) if name == tool.name else None
+        monkeypatch.setattr(rvfind.shutil, "which", fake_which)
+        kw = where(tmp_path)
+        del kw["which"]
+        bin_dir, source, _ = rvfind.find_rv("rvio", **kw)
         assert (bin_dir, source) == (d, "PATH")
-
-    def test_macos_rv_bare_name_needs_posix_host(self, tmp_path, rvfind):
-        if os.name == "nt":
-            pytest.skip("bare-name PATH lookup needs a POSIX host")
-        plat = "darwin"
-        d = tmp_path / "pathdir_mac"
-        make_tool(d, "rv", plat)
-        env = {"PATH": str(d)}
-        bin_dir, source, _ = rvfind.find_rv("rv", env=env, platform=plat,
-                                            home=tmp_path / "home", root=tmp_path / "root",
-                                            registry=lambda: None)
-        assert (bin_dir, source) == (d, "PATH")
+        assert tool.name in calls
 
 
 # --- errors and reporting -----------------------------------------------------------------
 
 def test_nothing_found_lists_what_was_tried(tmp_path, rvfind):
     with pytest.raises(rvfind.RvNotFound) as exc:
-        rvfind.find_rv("rvio", env={}, platform="linux", home=tmp_path / "home",
-                       root=tmp_path / "root", registry=lambda: None)
+        rvfind.find_rv("rvio", **where(tmp_path, platform="linux"))
     msg = str(exc.value)
     assert "rvio not found" in msg
-    for token in ("--rv-bin", "RV_BIN", "RVPUSH_RV_EXECUTABLE_PATH", "RV_PATH", "RV_APP_RV",
-                 "RV_HOME", "PATH", "registry", "install"):
+    for token in ("--rv-bin", "config.json", "PATH", "registry", "install", "OpenRV build"):
         assert token in msg
 
 
 def test_locate_returns_error_dict_instead_of_raising(tmp_path, rvfind):
-    report = rvfind.locate("rvio", env={}, platform="linux", home=tmp_path / "home",
-                           root=tmp_path / "root", registry=lambda: None)
+    report = rvfind.locate("rvio", **where(tmp_path, platform="linux"))
     assert report["found"] is False
     assert report["error"]
 
@@ -403,9 +445,8 @@ def test_locate_versions_false_does_not_run_anything(tmp_path, rvfind, monkeypat
         raise AssertionError("tool_version must not be called when versions=False")
 
     monkeypatch.setattr(rvfind, "tool_version", boom)
-    report = rvfind.locate("rvio", rv_bin=str(folder), versions=False, env={},
-                           platform="linux", home=tmp_path / "home", root=tmp_path / "root",
-                           registry=lambda: None)
+    report = rvfind.locate("rvio", rv_bin=str(folder), versions=False,
+                           **where(tmp_path, platform="linux"))
     assert report["found"] is True
     assert report["versions"] == {}
 

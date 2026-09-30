@@ -20,10 +20,11 @@ python scripts/rv_find.py              # JSON: bin folder, every tool's path, rv
 python scripts/rv_find.py --path rvio  # just the path
 ```
 
-Search order: `--rv-bin`, `RV_BIN`, `RVPUSH_RV_EXECUTABLE_PATH`, `RV_PATH`, `RV_APP_RV`,
-`RV_HOME`, `PATH`, the Windows registry, then the usual install folders (Program Files
-OpenRV / Autodesk / ShotGrid, `/Applications/*RV*.app`, `/opt/rv*`, `/usr/local/rv*`).
-If nothing is found, ask the user where RV is installed and pass `--rv-bin`.
+Search order: `--rv-bin`, `rv_bin` in `~/.config/tvr-skills-rv/config.json`, `PATH`, the
+Windows registry, the usual install folders (Program Files OpenRV / Autodesk / ShotGrid,
+`/Applications/*RV*.app`, `/opt/rv*`, `/usr/local/rv*`), then an OpenRV built from source
+(`~/OpenRV`, or the checkout you are in: `_build/stage/app`). No environment variable is
+read. If nothing is found, ask the user where RV is installed and pass `--rv-bin`.
 
 ## Scripts
 

@@ -4,25 +4,27 @@
 Looks for one RV bin folder and reports the tools in it: rv, rvio, rvls, rvpkg, rvpush, plus
 rvio_hw (Autodesk RV), rvio_sw (Linux OpenRV), mu-interp and py-interp when present.
 Standard library only; works on Windows, macOS and Linux. This file is identical in every
-tvr-skills-rv command-line skill.
+tvr-skills-rv command-line skill. It reads no environment variables: RV is found from the
+command line, a config file, PATH and the usual install folders.
 
 Search order (first folder that holds the wanted tool wins):
-  1. --rv-bin PATH               a bin folder, an install root, an .app bundle or a tool path
-  2. RV_BIN                      same forms as --rv-bin
-  3. RVPUSH_RV_EXECUTABLE_PATH   the rv executable rvpush starts (ignored when "none")
-  4. RV_PATH                     rv executable (the convention RV's Nuke integration reads)
-  5. RV_APP_RV                   rv executable; RV sets it for processes it starts
-  6. RV_HOME                     install root: RV_HOME/bin, or RV_HOME/Contents/MacOS for an .app
-  7. PATH
-  8. Windows only: the App Paths registry key for rv.exe that RV's .reg files add
-  9. usual install folders, newest version first:
-       Windows  Program Files: OpenRV*, Autodesk/RV*, ShotGrid/RV*, Shotgun/RV*, ShotGrid RV*,
-                Shotgun RV* (each with bin)
+  1. --rv-bin PATH     a bin folder, an install root, an .app bundle or a tool path
+  2. config file       "rv_bin" in ~/.config/tvr-skills-rv/config.json (same forms; a
+                       leading ~ is the home folder), for example {"rv_bin": "/opt/rv/bin"}
+  3. PATH
+  4. Windows only: the App Paths registry key for rv.exe that RV's .reg files add
+  5. usual install folders, newest version first:
+       Windows  Program Files and Program Files (x86): OpenRV*, Autodesk/RV*, ShotGrid/RV*,
+                Shotgun/RV*, ShotGrid RV*, Shotgun RV* (each with bin)
        macOS    /Applications and ~/Applications: RV*.app, OpenRV*.app (Contents/MacOS)
        Linux    /opt/rv*, /opt/RV*, /opt/OpenRV*, /opt/openrv*, /usr/local/rv*,
                 /usr/local/OpenRV* (each with bin), then /usr/local/bin
+  6. OpenRV built from source (the openrv-build plugin's layout): the first of the current
+     folder and its parents, ~/OpenRV and, on Windows, C:/OpenRV that holds rvcmds.sh, then
+     its _build/stage/app/RV.app/Contents/MacOS (macOS) or _build/stage/app/bin
 
-An explicit --rv-bin or RV_BIN that does not hold the wanted tool is an error, not skipped.
+An explicit --rv-bin or config rv_bin that does not hold the wanted tool is an error, not
+skipped, and so is a config file that is not a JSON object.
 
 Output (stdout, one JSON object):
   {"found": true, "bin_dir": "...", "source": "PATH", "platform": "linux",
@@ -31,7 +33,8 @@ Output (stdout, one JSON object):
 Versions come from "rvio -version" and "rvls -version" (command-line only; rv itself is never
 started because it opens a window). --path TOOL prints only that tool's path.
 
-Exit status: 0 found; 1 not found or a wrong --rv-bin / RV_BIN; 2 bad arguments.
+Exit status: 0 found; 1 not found, a wrong --rv-bin / config rv_bin or a broken config
+file; 2 bad arguments.
 """
 import argparse
 import glob
@@ -48,10 +51,22 @@ EXTRA_TOOLS = ("rvio_hw", "rvio_sw", "mu-interp", "py-interp")
 VERSION_TOOLS = ("rvio", "rvls")          # both print "X.Y.Z" for -version and open no window
 VERSION_TIMEOUT_S = 20.0
 VERSION_RE = re.compile(r"\d+\.\d+(?:\.\d+)?")
+CONFIG_PARTS = (".config", "tvr-skills-rv", "config.json")    # under the home folder
+EXPLICIT_SOURCES = ("--rv-bin", "config")
+OPENRV_MARKER = "rvcmds.sh"               # at the top of an OpenRV source checkout
+# Windows known folders (KNOWNFOLDERID): Program Files for this process, the 64-bit one
+# and the 32-bit one. Asked from the shell, so a moved Program Files is found too.
+FOLDERID_PROGRAM_FILES = ("905e63b6-c1bf-494e-b29c-65b732d3d21a",
+                          "6d809377-6af0-444b-8957-a3773f02200e",
+                          "7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e")
 
 
 class RvNotFound(RuntimeError):
     """RV could not be found; the message says what was tried and what to do."""
+
+
+class ConfigError(ValueError):
+    """The config file exists but is not a JSON object of strings."""
 
 
 def os_kind(platform=None):
@@ -79,16 +94,96 @@ def natural_key(path):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", str(path))]
 
 
-def install_patterns(platform=None, env=None, home=None, root="/"):
-    """Glob patterns for the usual install bin folders, in the order they are tried."""
-    env = os.environ if env is None else env
+# --- config file --------------------------------------------------------------------------
+
+def config_path(home=None):
+    """~/.config/tvr-skills-rv/config.json (home: the home folder; default Path.home())."""
+    return (Path.home() if home is None else Path(home)).joinpath(*CONFIG_PARTS)
+
+
+def load_config(home=None):
+    """Settings from the config file: {} when there is none; ConfigError when it is broken."""
+    path = config_path(home)
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f"{path} is not valid JSON ({exc}); fix it or delete it") from None
+    if not isinstance(data, dict) or not all(isinstance(v, str) for v in data.values()):
+        raise ConfigError(f'{path} must hold one JSON object of strings, such as '
+                          f'{{"rv_bin": "/opt/rv/bin"}}; fix it or delete it')
+    return data
+
+
+def config_value(config, key, home=None):
+    """config[key] as a path string, with a leading ~ made the home folder; None if unset."""
+    value = (config or {}).get(key, "").strip()
+    if not value:
+        return None
+    if value == "~" or value.startswith(("~/", "~\\")):
+        return str((Path.home() if home is None else Path(home)) / value[2:])
+    return value
+
+
+# --- Windows folders ----------------------------------------------------------------------
+
+def known_folder(guid):
+    """A Windows known folder from SHGetKnownFolderPath, or None (always None elsewhere)."""
+    try:
+        import ctypes
+        import uuid
+        from ctypes import wintypes
+        shell32 = ctypes.windll.shell32
+        ole32 = ctypes.windll.ole32
+    except (ImportError, AttributeError, OSError):
+        return None
+
+    class GUID(ctypes.Structure):
+        _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD),
+                    ("Data3", wintypes.WORD), ("Data4", ctypes.c_ubyte * 8)]
+
+    u = uuid.UUID(guid)
+    g = GUID(u.fields[0], u.fields[1], u.fields[2],
+             (ctypes.c_ubyte * 8).from_buffer_copy(u.bytes[8:]))
+    out = ctypes.c_wchar_p()
+    try:
+        if shell32.SHGetKnownFolderPath(ctypes.byref(g), 0, None, ctypes.byref(out)) != 0:
+            return None
+        value = out.value
+        ole32.CoTaskMemFree(out)
+    except (OSError, AttributeError, ValueError):
+        return None
+    return Path(value) if value else None
+
+
+def program_files_dirs(root="/"):
+    """Program Files folders to search on Windows: the known folders, then C:/Program Files
+    and C:/Program Files (x86). Under a test root only the root's own folders are used."""
+    dirs = []
+    if str(root) == "/":
+        for guid in FOLDERID_PROGRAM_FILES:
+            p = known_folder(guid)
+            if p and p not in dirs:
+                dirs.append(p)
+        base = Path("C:/")
+    else:
+        base = Path(root)
+    for name in ("Program Files", "Program Files (x86)"):
+        if base / name not in dirs:
+            dirs.append(base / name)
+    return dirs
+
+
+def install_patterns(platform=None, home=None, root="/", program_files=None):
+    """Glob patterns for the usual install bin folders, in the order they are tried.
+    program_files: callable returning the Windows Program Files folders (default:
+    program_files_dirs(root))."""
     kind = os_kind(platform)
     if kind == "windows":
         pats = []
-        for var in ("ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"):
-            base = env.get(var)
-            if not base:
-                continue
+        bases = program_files() if program_files is not None else program_files_dirs(root)
+        for base in bases:
             for sub in ("OpenRV*", "Autodesk/RV*", "ShotGrid/RV*", "Shotgun/RV*",
                         "ShotGrid RV*", "Shotgun RV*"):
                 pat = str(Path(base) / sub / "bin")
@@ -125,6 +220,41 @@ def registry_rv():
     return None
 
 
+# --- OpenRV built from source ---------------------------------------------------------------
+
+def openrv_build_roots(platform=None, home=None, root="/", cwd=None):
+    """Folders that may be an OpenRV source checkout: the current folder and its parents,
+    ~/OpenRV and, on Windows, C:/OpenRV (the openrv-build plugin's default places)."""
+    cwd = Path.cwd() if cwd is None else Path(cwd)
+    out = [cwd] + list(cwd.parents)
+    if home is not None:
+        out.append(Path(home) / "OpenRV")
+    if os_kind(platform) == "windows":
+        out.append((Path("C:/") if str(root) == "/" else Path(root)) / "OpenRV")
+    return out
+
+
+def openrv_build_bin(checkout, platform=None):
+    """The staged bin folder of an OpenRV build in checkout."""
+    app = Path(checkout) / "_build" / "stage" / "app"
+    if os_kind(platform) == "macos":
+        return app / "RV.app" / "Contents" / "MacOS"
+    return app / "bin"
+
+
+def openrv_build_dirs(platform=None, home=None, root="/", cwd=None):
+    """Bin folder of the first OpenRV checkout found (one that holds rvcmds.sh), or []."""
+    for folder in openrv_build_roots(platform, home, root, cwd):
+        try:
+            if (folder / OPENRV_MARKER).is_file():
+                return [openrv_build_bin(folder, platform)]
+        except OSError:
+            continue
+    return []
+
+
+# --- the search -----------------------------------------------------------------------------
+
 def bin_dirs_for(path, platform=None):
     """Folders to look in for a user-given path: a tool, a bin folder, an install root or .app."""
     p = Path(path)
@@ -137,45 +267,43 @@ def bin_dirs_for(path, platform=None):
     return out
 
 
-def home_bin(rv_home):
-    """Bin folder under an install root; RV_HOME is the .app bundle on macOS."""
-    h = Path(rv_home)
-    if h.suffix == ".app":
-        return h / "Contents" / "MacOS"
-    return h / "bin"
-
-
-def candidates(rv_bin=None, env=None, platform=None, home=None, root="/", registry=None):
-    """[(source, [folders])] in lookup order."""
-    env = os.environ if env is None else env
+def iter_candidates(rv_bin=None, config=None, platform=None, home=None, root="/",
+                    registry=None, which=None, cwd=None, program_files=None):
+    """(source, [folders]) in lookup order, lazily: the config file is read only when
+    --rv-bin did not already answer. config: settings dict (default: the config file)."""
     kind = os_kind(platform)
-    out = []
+    which = which or shutil.which
     if rv_bin:
-        out.append(("--rv-bin", bin_dirs_for(rv_bin, platform)))
-    if env.get("RV_BIN"):
-        out.append(("RV_BIN", bin_dirs_for(env["RV_BIN"], platform)))
-    for var in ("RVPUSH_RV_EXECUTABLE_PATH", "RV_PATH", "RV_APP_RV"):   # each names rv itself
-        exe = env.get(var, "").strip().strip('"')
-        if exe and exe.lower() != "none":
-            out.append((var, [Path(exe).parent]))
-    if env.get("RV_HOME"):
-        out.append(("RV_HOME", [home_bin(env["RV_HOME"])]))
-    path_var = env.get("PATH", "")
+        yield "--rv-bin", bin_dirs_for(rv_bin, platform)
+    if config is None:
+        config = load_config(home)
+    configured = config_value(config, "rv_bin", home)
+    if configured:
+        yield "config", bin_dirs_for(configured, platform)
     seen = set()
     for tool in ("rvio", "rv", "rvls", "rvpkg", "rvpush"):
         for name in exe_names(tool, platform):
-            hit = shutil.which(name, path=path_var)
+            hit = which(name)
             if hit and str(Path(hit).parent) not in seen:
                 seen.add(str(Path(hit).parent))
-                out.append(("PATH", [Path(hit).parent]))
+                yield "PATH", [Path(hit).parent]
     if kind == "windows":
         reg = (registry or registry_rv)()
         if reg:
-            out.append(("registry", [Path(reg).parent]))
-    for pat in install_patterns(platform, env, home, root):
+            yield "registry", [Path(reg).parent]
+    for pat in install_patterns(platform, home, root, program_files):
         for hit in sorted(glob.glob(pat), key=natural_key, reverse=True):
-            out.append(("install folder", [Path(hit)]))
-    return out
+            yield "install folder", [Path(hit)]
+    build = openrv_build_dirs(platform, home, root, cwd)
+    if build:
+        yield "OpenRV build", build
+
+
+def candidates(rv_bin=None, config=None, platform=None, home=None, root="/", registry=None,
+               which=None, cwd=None, program_files=None):
+    """[(source, [folders])] in lookup order."""
+    return list(iter_candidates(rv_bin, config, platform, home, root, registry, which, cwd,
+                                program_files))
 
 
 def tool_in(folder, tool, platform=None):
@@ -195,31 +323,38 @@ def tools_in(folder, platform=None):
             for t in CORE_TOOLS + EXTRA_TOOLS}
 
 
-def find_rv(want="rvio", rv_bin=None, env=None, platform=None, home=None, root="/",
-            registry=None):
+def find_rv(want="rvio", rv_bin=None, config=None, platform=None, home=None, root="/",
+            registry=None, which=None, cwd=None, program_files=None):
     """(bin_dir, source, searched) for the first folder that holds `want`.
 
     searched lists (source, folder, matched) for every folder looked at.
-    Raises RvNotFound when nothing matches or an explicit --rv-bin / RV_BIN is wrong.
+    Raises RvNotFound when nothing matches, an explicit --rv-bin / config rv_bin is wrong or
+    the config file is broken.
     """
     if home is None:
         home = Path.home()
     searched = []
-    for source, folders in candidates(rv_bin, env, platform, home, root, registry):
-        for folder in folders:
-            hit = tool_in(folder, want, platform)
-            searched.append((source, str(folder), bool(hit)))
-            if hit:
-                return Path(folder), source, searched
-        if source in ("--rv-bin", "RV_BIN"):
-            raise RvNotFound(
-                f"{source} points at {folders[0]}, but no {exe_names(want, platform)[0]} was "
-                f"found there or in its bin folder. Point it at the RV bin folder "
-                f"(<install>/bin, or RV.app/Contents/MacOS on macOS).")
+    try:
+        for source, folders in iter_candidates(rv_bin, config, platform, home, root, registry,
+                                               which, cwd, program_files):
+            for folder in folders:
+                hit = tool_in(folder, want, platform)
+                searched.append((source, str(folder), bool(hit)))
+                if hit:
+                    return Path(folder), source, searched
+            if source in EXPLICIT_SOURCES:
+                where = "--rv-bin" if source == "--rv-bin" else f"rv_bin in {config_path(home)}"
+                raise RvNotFound(
+                    f"{where} points at {folders[0]}, but no {exe_names(want, platform)[0]} "
+                    f"was found there or in its bin folder. Point it at the RV bin folder "
+                    f"(<install>/bin, or RV.app/Contents/MacOS on macOS).")
+    except ConfigError as exc:
+        raise RvNotFound(f"config file problem: {exc}") from None
     raise RvNotFound(
-        f"{want} not found. Tried --rv-bin, RV_BIN, RVPUSH_RV_EXECUTABLE_PATH, RV_PATH, "
-        f"RV_APP_RV, RV_HOME, PATH, the Windows registry and the usual install folders. "
-        f"Install RV or OpenRV, or pass --rv-bin <RV bin folder>, or set RV_BIN to it.")
+        f"{want} not found. Tried --rv-bin, rv_bin in {config_path(home)}, PATH, the Windows "
+        f"registry, the usual install folders and an OpenRV build (~/OpenRV or a folder "
+        f"above this one holding {OPENRV_MARKER}). Install RV or OpenRV, or pass --rv-bin "
+        f"<RV bin folder>, or put it in that config file as \"rv_bin\".")
 
 
 def no_window_flags():
@@ -239,18 +374,18 @@ def tool_version(path, timeout=VERSION_TIMEOUT_S):
     return m.group(0) if m else None
 
 
-def locate(want="rvio", rv_bin=None, versions=True, env=None, platform=None, home=None,
-           root="/", registry=None):
-    """Full report as a dict (see the module docstring)."""
-    report = {"found": False, "want": want, "platform": os_kind(platform), "bin_dir": None,
-              "source": None, "tools": {}, "versions": {}, "searched": []}
+def locate(want="rvio", rv_bin=None, versions=True, **where):
+    """Full report as a dict (see the module docstring). where: find_rv's keyword arguments
+    (config, platform, home, root, registry, which, cwd, program_files)."""
+    report = {"found": False, "want": want, "platform": os_kind(where.get("platform")),
+              "bin_dir": None, "source": None, "tools": {}, "versions": {}, "searched": []}
     try:
-        folder, source, searched = find_rv(want, rv_bin, env, platform, home, root, registry)
+        folder, source, searched = find_rv(want, rv_bin, **where)
     except RvNotFound as exc:
         report["error"] = str(exc)
         return report
     report.update(found=True, bin_dir=str(folder), source=source,
-                  tools=tools_in(folder, platform), searched=searched)
+                  tools=tools_in(folder, where.get("platform")), searched=searched)
     if versions:
         for t in VERSION_TOOLS:
             if report["tools"].get(t):
@@ -262,8 +397,9 @@ def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Find the RV / OpenRV command-line tools (rv, rvio, rvls, rvpkg, rvpush) "
                     "and print their paths and versions as JSON.",
-        epilog="Search order: --rv-bin, RV_BIN, RVPUSH_RV_EXECUTABLE_PATH, RV_PATH, RV_APP_RV, "
-               "RV_HOME, PATH, the Windows registry, then the usual install folders. "
+        epilog="Search order: --rv-bin, rv_bin in ~/.config/tvr-skills-rv/config.json, PATH, "
+               "the Windows registry, the usual install folders, then an OpenRV build "
+               "(~/OpenRV or a folder above the current one holding rvcmds.sh). "
                "Exit 0 found, 1 not found.")
     ap.add_argument("--rv-bin", help="RV bin folder, install root, .app bundle or tool path")
     ap.add_argument("--want", default="rvio", choices=CORE_TOOLS + EXTRA_TOOLS,
