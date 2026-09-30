@@ -41,12 +41,18 @@ matching eval entries so the change is checked, not just asserted in the pull re
 
 ## Validating the plugin
 
-Before opening a pull request that touches `.claude-plugin/marketplace.json` or any
-`SKILL.md`, run:
+Before opening a pull request that touches `.claude-plugin/plugin.json`,
+`.claude-plugin/marketplace.json` or any `SKILL.md`, run:
 
 ```bash
-claude plugin validate .
+claude plugin validate . --strict
+python scripts/check_repo.py
 ```
+
+`claude plugin validate` checks both manifests, but it does not read the `SKILL.md` files of
+skills that `plugin.json` lists outside a `skills/` folder, as this repository's are;
+`check_repo.py` and the tests check their frontmatter. `plugin.json` is the plugin's manifest:
+declare skills there, not in the marketplace entry.
 
 ## Privacy rules for anything you contribute
 

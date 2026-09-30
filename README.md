@@ -107,8 +107,9 @@ Free and MIT-licensed. If it saves you time, you can [buy me a coffee](https://b
 
 **Install before you start a session.** Claude Code loads skills and plugins when a session starts, so they work best when installed first. If you install one during a session, start a new session before asking for it.
 
-Update later with `/plugin marketplace update tvr-skills-rv`. Plugin skills are namespaced, so
-the skill is `/rv:rv-review`.
+On Claude Code v2.1.275 or later, one command adds the marketplace and installs the plugin:
+`/plugin install rv --marketplace nzanepro/tvr-skills-rv`. Plugin skills are namespaced, so
+the skill is `/rv:rv-review`. To update, see [Updating](#updating).
 
 **Personal skill** (every project), from a clone:
 
@@ -279,8 +280,10 @@ python -m pytest tests -q
 CI runs the tests on Windows, macOS and Linux. The tests never need RV. Trigger evals
 (prompts that should and should not load the skill, focused on near misses) are in
 [`evals/trigger-queries.json`](evals/trigger-queries.json) in the skill-creator format.
-Check the marketplace file with `claude plugin validate .` before a release, and keep
-`SKILL.md` under 500 lines with its gotchas in the file.
+Before a release, run `claude plugin validate . --strict` (it checks
+`.claude-plugin/marketplace.json` and the plugin's `.claude-plugin/plugin.json`) and
+`python scripts/check_repo.py` (skill frontmatter, manifests and privacy), and keep `SKILL.md`
+under 500 lines with its gotchas in the file.
 
 Images: [`docs/images/rv-flipbook.png`](docs/images/rv-flipbook.png) is the README demo and
 [`docs/images/social-preview.png`](docs/images/social-preview.png) (1280 x 640) is the GitHub
@@ -289,7 +292,7 @@ renders only.
 
 ## Updating
 
-**Plugin marketplace install**: update the marketplace from the `/plugin` panel (or `/plugin marketplace update tvr-skills-rv`), then reinstall if a skill's version changed. **Personal, linked or project skill (a clone)**: `git pull` in the clone; a linked skill folder picks the change up automatically, a copied one needs a fresh copy. To hear about new releases, use GitHub's Watch > Custom > Releases on this repository.
+**Plugin marketplace install**: in your shell, run `claude plugin update rv@tvr-skills-rv`; it refreshes the marketplace and installs the new version if the plugin's version changed. Inside Claude Code, the same is **Update now** on the plugin's page in the **Installed** tab of `/plugin`. The update loads in your next session, or after `/reload-plugins`. `/plugin marketplace update tvr-skills-rv` on its own only refreshes the list of plugins, and there is no need to reinstall. To update automatically, turn on auto-update for `tvr-skills-rv` in the **Marketplaces** tab of `/plugin`; it is off by default for marketplaces outside Anthropic's. **Personal, linked or project skill (a clone)**: `git pull` in the clone; a linked skill folder picks the change up automatically, a copied one needs a fresh copy. To hear about new releases, use GitHub's Watch > Custom > Releases on this repository.
 
 ## Changelog
 
