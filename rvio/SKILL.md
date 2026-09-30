@@ -4,7 +4,7 @@ description: "Converts and transcodes media with RV / OpenRV's rvio command-line
 license: MIT
 compatibility: Needs RV or OpenRV (rvio) and Python 3.9 or later for the helper scripts (standard library only). OpenRV's rvio renders through OpenGL, so it needs a desktop session or a virtual display (Linux installs may also ship rvio_sw). Desktop only (Claude Code CLI, desktop app or IDE extension on Windows, macOS or Linux); not claude.ai in a browser or the iOS / Android apps, which cannot run RV on your machine.
 metadata:
-  version: 0.1.2
+  version: 0.2.0
 ---
 
 # Convert and transcode media with rvio

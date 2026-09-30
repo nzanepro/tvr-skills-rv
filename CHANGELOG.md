@@ -9,6 +9,39 @@ own version, `metadata.version` in its `SKILL.md`, which changes only when that 
 so a skill's version can be lower than the plugin's; each release's "Versions" line lists the
 skill versions it changed.
 
+## [0.3.0] - 2026-09-30
+
+For Anthropic's plugin directory: no file in the repository reads shell or system variables any more, and the plugin has a new name. Upgrading from 0.2.x needs a reinstall (below).
+
+### Changed
+
+- **The plugin is renamed from `rv` to `rv-tools`**, because the directory held the two-letter name as too close to another listing's (`NAME_CONFUSABLE`). Install it as `rv-tools@tvr-skills-rv`; the skills are now `/rv-tools:rv-review`, `/rv-tools:rvio`, `/rv-tools:rvls` and `/rv-tools:rvpkg`. The marketplace (`tvr-skills-rv`), the repository and the skill folders keep their names. `plugin.json` also has a `displayName`, "RV and OpenRV Media Review".
+- **Moving from `rv@tvr-skills-rv`:** in your shell run `claude plugin uninstall rv@tvr-skills-rv`, `claude plugin marketplace update tvr-skills-rv` and `claude plugin install rv-tools@tvr-skills-rv` (or, inside Claude Code, `/plugin uninstall rv@tvr-skills-rv`, `/plugin marketplace update tvr-skills-rv` and `/plugin install rv-tools@tvr-skills-rv`), then start a new session. If you relied on `RV_BIN`, give that folder as the new RV bin folder setting or as `"rv_bin"` in `~/.config/tvr-skills-rv/config.json`.
+- `plugin.json` declares one optional, non-sensitive user option, `rv_bin` ("RV bin folder"). Claude Code writes its value into each `SKILL.md`, and the skills pass it as `--rv-bin` only when it reads as a path (an unset option stays a placeholder, which the skills ignore, and which the scripts also ignore if it is passed as `--rv-bin`).
+- RV and its tools are found from `--rv-bin`, then `"rv_bin"` in `~/.config/tvr-skills-rv/config.json` (a JSON object of paths; a leading `~` is the home folder), `PATH`, the Windows registry, the usual install folders, and last an OpenRV built from source with the openrv-build plugin: a checkout holding `rvcmds.sh` in the current folder or one above it, `~/OpenRV` or `C:\OpenRV`, with the build in `_build/stage/app`. A wrong `--rv-bin` or config `rv_bin`, or a config file that is not a JSON object of strings, is an error that names it.
+- rv-review runs rvpush only while an RV with the review tag is alive (its port file in the system temp folder names a running process), so a closed window is reported instead of rvpush starting a stray RV. On macOS and Linux rvpush also runs under `/usr/bin/env RVPUSH_RV_EXECUTABLE_PATH=none`, which sets that one variable for rvpush alone; Windows has no such launcher and relies on the check, so an RV that quits between the check and the push can still let rvpush start one. `rv_review.py --push COMMAND ARG ...` sends one guarded rvpush command and prints its output, and the rv-review references use it instead of rvpush with a shell variable in front.
+- `web_capture.py` and `rasterize.py` take `--chrome PATH` and `--playwright-browsers DIR` (config `"chrome"` and `"playwright_browsers"`); a `--chrome` that is not a file is an error. `app_capture.py android` takes `--adb PATH` (config `"adb"`), then `PATH`, then the Android SDK's default folder.
+- The Node runs of Playwright (web capture and Electron) load the project's own Playwright with `createRequire` from the project folder instead of an extended module search path.
+- `rv-review/references/rv-command-line.md` keeps rvlinks, rvpush's `url` command and the manual links apart from the eval and interpreter commands, for the directory's download-and-execute warning (`RUNTIME_FETCH_EXEC`); no reference text was removed.
+- The docs describe variables in words: no shell-variable syntax, PowerShell variable drive or percent-sign folder names anywhere (the Windows folders are written as `~\AppData\...`, and rvpkg's package placeholder as "a dollar sign, then PACKAGE").
+- `scripts/check_repo.py` has a `no-env-reads` check, and `tests/test_no_env_reads.py` the same guard: no tracked file outside `.github/workflows`, tests and dev scripts included, reads shell or system variables or holds a shell-variable token (Claude Code's `user_config` substitution of `rv_bin` is the one allowed). The tests that use a real RV take `pytest --rv-bin DIR`.
+- Versions: plugin 0.3.0; rv-review 0.3.0, rvio 0.2.0, rvls 0.2.0 and rvpkg 0.2.0.
+
+### Removed
+
+Every lookup through a shell or system variable. What replaces each:
+
+- `RV_BIN`, `RVPUSH_RV_EXECUTABLE_PATH`, `RV_PATH`, `RV_APP_RV` and `RV_HOME` (as ways to find RV): `--rv-bin`, the plugin's RV bin folder option, or `"rv_bin"` in the config file; an RV on `PATH`, in its usual install folder or in an OpenRV build folder needs none of them.
+- `ProgramFiles`, `ProgramW6432`, `ProgramFiles(x86)`: the Windows Program Files known folders, else `C:\Program Files` and `C:\Program Files (x86)` (RV, Chrome / Edge, Inkscape).
+- `CHROME_PATH`: `--chrome` or `"chrome"` in the config file.
+- `PLAYWRIGHT_BROWSERS_PATH` (for the command-line browser lookup): `--playwright-browsers` or `"playwright_browsers"`; Playwright itself still reads its own setting when it runs.
+- `LOCALAPPDATA`: the Local AppData known folder, else `~\AppData\Local`; `XDG_CACHE_HOME`: `~/.cache`.
+- `ANDROID_HOME`, `ANDROID_SDK_ROOT`: `--adb` or `"adb"` in the config file, `PATH`, then `~/Library/Android/sdk` (macOS), `~/Android/Sdk` (Linux) or `~\AppData\Local\Android\Sdk` (Windows).
+- `APPDATA` and `XDG_DATA_HOME` (OpenRV's log): the Roaming AppData known folder (else `~\AppData\Roaming`) and `~/.local/share`.
+- The `NODE_PATH` override for the Node children: `createRequire` from the project folder.
+- `REPO_CHECK_WORDS` for `check_repo.py`: the git-ignored `.private-words` file only.
+- `RV_BIN` for the test suite: `pytest --rv-bin DIR`.
+
 ## [0.2.4] - 2026-09-29
 
 Fixes for two findings of Anthropic's plugin directory, and documentation; no skill script changed.
@@ -146,6 +179,7 @@ Packaging and documentation; no script or skill behaviour changed.
 - Claude Code plugin marketplace (`.claude-plugin/marketplace.json`), trigger evals, tests and
   CI on Windows, macOS and Linux.
 
+[0.3.0]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.3.0
 [0.2.4]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.4
 [0.2.3]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.3
 [0.2.2]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.2

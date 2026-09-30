@@ -4,7 +4,7 @@ description: Loads images and media into RV / OpenRV for review, dailies and app
 license: MIT
 compatibility: Needs a local desktop session with RV or OpenRV (rv and rvpush) and Python 3.9 or later; the image scripts also need numpy and Pillow. Optional, detected, never installed - Playwright or Chrome / Edge (web capture, SVG), resvg / CairoSVG / Inkscape (SVG), Xcode simctl or adb (mobile capture). Desktop only (Claude Code CLI, desktop app or IDE extension on Windows, macOS or Linux); not claude.ai in a browser or the iOS / Android apps, which cannot run RV on your machine.
 metadata:
-  version: 0.2.4
+  version: 0.3.0
 ---
 
 # Review media in RV
