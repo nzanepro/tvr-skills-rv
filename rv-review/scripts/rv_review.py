@@ -220,6 +220,9 @@ def registry_rv():
 
 
 EXPLICIT_SOURCES = ("--rv-bin", "config")
+# Claude Code's reference to the plugin's rv_bin option, as it reads when the option is unset
+# and Claude Code left it in the skill text: never a path, so --rv-bin ignores it.
+UNSET_OPTION = "$" + "{user_config.rv_bin}"
 
 
 def iter_candidates(rv_bin=None, config=None, platform=None, home=None, root="/",
@@ -233,7 +236,7 @@ def iter_candidates(rv_bin=None, config=None, platform=None, home=None, root="/"
     """
     kind = _os_kind(platform)
     which = which or shutil.which
-    if rv_bin:
+    if rv_bin and str(rv_bin).strip() != UNSET_OPTION:
         yield "--rv-bin", Path(rv_bin)
     if config is None:
         config = local_config.load_config(home)

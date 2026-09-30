@@ -763,3 +763,11 @@ def test_cli_wrong_rv_bin_exits_1_with_rv_review_error(tmp_path):
         capture_output=True, text=True, timeout=30)
     assert result.returncode == 1
     assert result.stderr.startswith("rv_review:")
+
+
+def test_find_rv_ignores_the_unsubstituted_plugin_option(tmp_path, rr):
+    path_dir = tmp_path / "pathdir"
+    winner = _make_pair(rr, path_dir, LINUX)
+    placeholder = "$" + "{user_config.rv_bin}"
+    assert rr.find_rv(rv_bin=placeholder, platform=LINUX,
+                      **_where(tmp_path, which=_which_in(path_dir))) == winner

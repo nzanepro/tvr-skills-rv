@@ -53,6 +53,9 @@ VERSION_TIMEOUT_S = 20.0
 VERSION_RE = re.compile(r"\d+\.\d+(?:\.\d+)?")
 CONFIG_PARTS = (".config", "tvr-skills-rv", "config.json")    # under the home folder
 EXPLICIT_SOURCES = ("--rv-bin", "config")
+# Claude Code's reference to the plugin's rv_bin option, as it reads when the option is unset
+# and Claude Code left it in the skill text: never a path, so --rv-bin ignores it.
+UNSET_OPTION = "$" + "{user_config.rv_bin}"
 OPENRV_MARKER = "rvcmds.sh"               # at the top of an OpenRV source checkout
 # Windows known folders (KNOWNFOLDERID): Program Files for this process, the 64-bit one
 # and the 32-bit one. Asked from the shell, so a moved Program Files is found too.
@@ -273,7 +276,7 @@ def iter_candidates(rv_bin=None, config=None, platform=None, home=None, root="/"
     --rv-bin did not already answer. config: settings dict (default: the config file)."""
     kind = os_kind(platform)
     which = which or shutil.which
-    if rv_bin:
+    if rv_bin and rv_bin.strip() != UNSET_OPTION:
         yield "--rv-bin", bin_dirs_for(rv_bin, platform)
     if config is None:
         config = load_config(home)

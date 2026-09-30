@@ -468,3 +468,13 @@ class TestMain:
         rc = rvfind.main(["--path", "rvls", "--rv-bin", str(empty)])
         capsys.readouterr()
         assert rc == 1
+
+
+def test_unsubstituted_plugin_option_is_not_a_path(tmp_path, rvfind):
+    """An agent that passes the unset option's placeholder as --rv-bin gets the normal search."""
+    path_dir = tmp_path / "path_bin"
+    make_tool(path_dir, "rvio", "linux")
+    placeholder = "$" + "{user_config.rv_bin}"
+    bin_dir, source, _ = rvfind.find_rv("rvio", rv_bin=placeholder,
+                                        **where(tmp_path, platform="linux", which=which_in(path_dir)))
+    assert (bin_dir, source) == (path_dir, "PATH")
