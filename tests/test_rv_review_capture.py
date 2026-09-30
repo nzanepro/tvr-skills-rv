@@ -10,12 +10,11 @@
 Safety: nothing here launches a browser (Chrome, Edge, Playwright), RV / rvpush, node, adb or
 xcrun, and nothing opens a window. Only pure functions are called; backend and tool discovery
 is exercised with injected fake `which` / `has_module` / `find_chrome` callables and synthetic
-env dicts; CLI runs use --dry-run, --list-backends (lookups only) or error paths that exit
+folders; CLI runs use --dry-run, --list-backends (lookups only) or error paths that exit
 before any tool is started, and every subprocess.run has a timeout.
 """
 import json
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -32,10 +31,10 @@ WEB_CAPTURE_SCRIPT = SCRIPTS / "web_capture.py"
 APP_CAPTURE_SCRIPT = SCRIPTS / "app_capture.py"
 
 
-def _run(script, *args, cwd=None, env=None):
+def _run(script, *args, cwd=None):
     """Run a script with this Python; always with a timeout so a mistake cannot hang."""
     return subprocess.run([sys.executable, str(script), *map(str, args)], capture_output=True,
-                          text=True, timeout=30, cwd=cwd, env=env)
+                          text=True, timeout=30, cwd=cwd)
 
 
 def _last_json(stdout):
@@ -582,7 +581,7 @@ def test_chrome_args_options(wc):
 
 
 # ---------------------------------------------------------------------------
-# find_chrome (fake which, synthetic env)
+# find_chrome (fake which, folders under tmp_path)
 # ---------------------------------------------------------------------------
 
 def _which_only(*hits):
@@ -595,44 +594,49 @@ def _which_only(*hits):
     return which
 
 
-def test_find_chrome_env_var_wins(tmp_path, wc):
+def _no_home(tmp_path):
+    """find_chrome keyword arguments that keep the real machine's folders out."""
+    return {"home": tmp_path / "home", "local": tmp_path / "local", "program_files": []}
+
+
+def test_find_chrome_flag_wins(tmp_path, wc):
     exe = tmp_path / "my-chrome"
     exe.write_bytes(b"")
-    assert wc.find_chrome(env={"CHROME_PATH": str(exe)}, platform="linux",
-                          which=_which_only("google-chrome")) == str(exe)
+    assert wc.find_chrome(str(exe), platform="linux", which=_which_only("google-chrome"),
+                          **_no_home(tmp_path)) == str(exe)
 
 
-def test_find_chrome_env_var_to_missing_file_is_ignored(tmp_path, wc):
-    env = {"CHROME_PATH": str(tmp_path / "gone")}
-    assert wc.find_chrome(env=env, platform="linux",
-                          which=_which_only("chromium")) == "fake/chromium"
+def test_find_chrome_missing_file_is_skipped_by_the_lookup(tmp_path, wc):
+    assert wc.find_chrome(str(tmp_path / "gone"), platform="linux",
+                          which=_which_only("chromium"), **_no_home(tmp_path)) == "fake/chromium"
 
 
-def test_find_chrome_which_order(wc):
+def test_find_chrome_which_order(tmp_path, wc):
     which = _which_only("chromium", "msedge")
-    assert wc.find_chrome(env={}, platform="linux", which=which) == "fake/chromium"
+    assert wc.find_chrome(platform="linux", which=which, **_no_home(tmp_path)) == "fake/chromium"
     assert which.calls[0] == "chrome-headless-shell"   # a headless shell is looked for first
     assert which.calls[1:] == list(wc.CHROME_NAMES[:which.calls.index("chromium")])
 
 
-def test_find_chrome_nothing_found(wc):
-    assert wc.find_chrome(env={}, platform="linux", which=_which_only()) is None
+def test_find_chrome_nothing_found(tmp_path, wc):
+    assert wc.find_chrome(platform="linux", which=_which_only(), **_no_home(tmp_path)) is None
 
 
 def test_find_chrome_windows_install_location(tmp_path, wc):
     exe = tmp_path / "Microsoft" / "Edge" / "Application" / "msedge.exe"
     exe.parent.mkdir(parents=True)
     exe.write_bytes(b"")
-    env = {"ProgramFiles": str(tmp_path)}
-    assert wc.find_chrome(env=env, platform="win32", which=_which_only()) == str(exe)
+    kw = dict(_no_home(tmp_path), program_files=[tmp_path])
+    assert wc.find_chrome(platform="win32", which=_which_only(), **kw) == str(exe)
 
 
 def test_chrome_candidates_per_platform(tmp_path, wc):
-    win = wc.chrome_candidates({"ProgramFiles": str(tmp_path)}, "win32")
-    assert [p.name for p in win] == ["chrome.exe", "msedge.exe", "chrome.exe"]
-    mac = wc.chrome_candidates({}, "darwin")
+    win = wc.chrome_candidates("win32", program_files=[tmp_path], local=tmp_path / "local")
+    assert [p.name for p in win] == ["chrome.exe", "msedge.exe", "chrome.exe"] * 2
+    assert win[3].parent.parent.parent.parent == tmp_path / "local"
+    mac = wc.chrome_candidates("darwin")
     assert any("Google Chrome.app" in str(p) for p in mac)
-    assert wc.chrome_candidates({}, "linux") == []
+    assert wc.chrome_candidates("linux") == []
 
 
 # ---------------------------------------------------------------------------
@@ -842,7 +846,7 @@ def test_android_demo_mode_on_off(ac):
 
 
 # ---------------------------------------------------------------------------
-# find_adb (fake which, synthetic env)
+# find_adb (fake which, folders under tmp_path)
 # ---------------------------------------------------------------------------
 
 ADB_NAME = "adb.exe" if os.name == "nt" else "adb"
@@ -855,20 +859,48 @@ def _sdk(root):
     return exe
 
 
-def test_find_adb_which_wins(tmp_path, ac):
-    _sdk(tmp_path / "sdk")
-    env = {"ANDROID_HOME": str(tmp_path / "sdk")}
-    assert ac.find_adb(env=env, which=lambda n: "fake/adb" if n == "adb" else None) == "fake/adb"
+def _adb_where(tmp_path):
+    return {"home": tmp_path / "home", "local": tmp_path / "local", "config": {}}
 
 
-def test_find_adb_android_home_then_sdk_root(tmp_path, ac):
-    home, root = _sdk(tmp_path / "home"), _sdk(tmp_path / "root")
+def test_find_adb_flag_wins(tmp_path, ac):
+    exe = _sdk(tmp_path / "sdk")
+    assert ac.find_adb(str(exe), which=lambda n: "fake/adb", **_adb_where(tmp_path)) == str(exe)
+
+
+def test_find_adb_flag_that_is_not_a_file_is_an_error(tmp_path, ac):
+    with pytest.raises(ac.CaptureError, match="--adb"):
+        ac.find_adb(str(tmp_path / "nope"), **_adb_where(tmp_path))
+
+
+def test_find_adb_config_file_value(tmp_path, ac):
+    exe = _sdk(tmp_path / "home" / "sdk")
+    kw = dict(_adb_where(tmp_path), config={"adb": "~/sdk/platform-tools/" + ADB_NAME})
+    assert ac.find_adb(which=lambda n: "fake/adb", **kw) == str(exe)
+
+
+def test_find_adb_which_before_default_folder(tmp_path, ac):
+    _sdk(tmp_path / "home" / "Android" / "Sdk")
+    assert ac.find_adb(which=lambda n: "fake/adb" if n == "adb" else None, platform="linux",
+                       **_adb_where(tmp_path)) == "fake/adb"
+
+
+@pytest.mark.parametrize("platform, parts", [
+    ("linux", ("home", "Android", "Sdk")),
+    ("darwin", ("home", "Library", "Android", "sdk")),
+    ("win32", ("local", "Android", "Sdk")),
+])
+def test_find_adb_default_sdk_folder(tmp_path, ac, platform, parts):
+    name = "adb.exe" if platform == "win32" else "adb"
+    exe = tmp_path.joinpath(*parts, "platform-tools", name)
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"")
     none = lambda n: None  # noqa: E731
-    env = {"ANDROID_HOME": str(tmp_path / "home"), "ANDROID_SDK_ROOT": str(tmp_path / "root")}
-    assert ac.find_adb(env=env, which=none) == str(home)
-    env["ANDROID_HOME"] = str(tmp_path / "empty")
-    assert ac.find_adb(env=env, which=none) == str(root)
-    assert ac.find_adb(env={}, which=none) is None
+    assert ac.find_adb(which=none, platform=platform, **_adb_where(tmp_path)) == str(exe)
+
+
+def test_find_adb_nothing_found(tmp_path, ac):
+    assert ac.find_adb(which=lambda n: None, platform="linux", **_adb_where(tmp_path)) is None
 
 
 # ---------------------------------------------------------------------------
@@ -894,13 +926,13 @@ def test_electron_variants_defaults_and_bad_size(tmp_path, ac):
 # app_capture CLI (dry runs and "tool missing" errors; no tool is started)
 # ---------------------------------------------------------------------------
 
-def _no_adb_env():
-    """This environment with an empty PATH and no Android SDK variables."""
-    env = dict(os.environ)
-    env["PATH"] = ""
-    for var in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
-        env.pop(var, None)
-    return env
+def _main_json(ac, argv, capsys, monkeypatch, tmp_path, adb=None):
+    """Run app_capture.main in this process from tmp_path, with find_adb answering `adb`, so
+    whatever adb the machine has is never found or started; returns (exit code, result)."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(ac, "find_adb", lambda *a, **k: adb)
+    code = ac.main(argv)
+    return code, _last_json(capsys.readouterr().out)
 
 
 def test_app_capture_cli_ios_dry_run(tmp_path):
@@ -917,12 +949,12 @@ def test_app_capture_cli_ios_dry_run(tmp_path):
     assert _files_under(tmp_path) == []
 
 
-def test_app_capture_cli_android_dry_run(tmp_path):
-    r = _run(APP_CAPTURE_SCRIPT, "android", "--screen", "home", "--out", "caps",
-             "--night", "no,yes", "--font-scale", "1.0,1.3", "--display", "1080x2400@420",
-             "--demo-mode", "--dry-run", cwd=tmp_path, env=_no_adb_env())
-    assert r.returncode == 0, r.stderr
-    res = _last_json(r.stdout)
+def test_app_capture_cli_android_dry_run(tmp_path, ac, capsys, monkeypatch):
+    code, res = _main_json(ac, ["android", "--screen", "home", "--out", "caps",
+                                "--night", "no,yes", "--font-scale", "1.0,1.3",
+                                "--display", "1080x2400@420", "--demo-mode", "--dry-run"],
+                           capsys, monkeypatch, tmp_path)
+    assert code == 0
     assert res["ok"] and res["dry_run"] and res["platform"] == "android"
     assert len(res["files"]) == 4
     assert all(c[0] == "adb" for c in res["commands"])
@@ -950,11 +982,10 @@ def test_app_capture_cli_electron_dry_run(tmp_path):
     (["android", "--font-scale", "big"], "not a number"),
     (["android", "--display", "huge"], "WIDTHxHEIGHT"),
 ])
-def test_app_capture_cli_bad_arguments_exit_2(tmp_path, args, needle):
-    r = _run(APP_CAPTURE_SCRIPT, *args, "--screen", "home", "--out", "caps", "--dry-run",
-             cwd=tmp_path, env=_no_adb_env())
-    assert r.returncode == 2
-    res = _last_json(r.stdout)
+def test_app_capture_cli_bad_arguments_exit_2(tmp_path, args, needle, ac, capsys, monkeypatch):
+    code, res = _main_json(ac, [*args, "--screen", "home", "--out", "caps", "--dry-run"],
+                           capsys, monkeypatch, tmp_path)
+    assert code == 2
     assert res["ok"] is False and needle in res["error"]
 
 
@@ -967,13 +998,36 @@ def test_app_capture_cli_ios_needs_macos(tmp_path):
     assert _files_under(tmp_path) == []
 
 
-def test_app_capture_cli_android_without_adb(tmp_path, ac):
-    env = _no_adb_env()
-    if ac.find_adb(env=env, which=lambda n: shutil.which(n, path=env["PATH"])) is not None:
-        pytest.skip("an adb is still reachable with an empty PATH; not starting it")
-    r = _run(APP_CAPTURE_SCRIPT, "android", "--screen", "home", "--out", "caps",
-             cwd=tmp_path, env=env)
-    assert r.returncode == 2
-    res = _last_json(r.stdout)
+def test_app_capture_cli_android_without_adb(tmp_path, ac, capsys, monkeypatch):
+    code, res = _main_json(ac, ["android", "--screen", "home", "--out", "caps"],
+                           capsys, monkeypatch, tmp_path)
+    assert code == 2
     assert res["ok"] is False and "adb not found" in res["error"]
     assert _files_under(tmp_path) == []
+
+
+# ---------------------------------------------------------------------------
+# Node children: Playwright is resolved from the project folder, not through variables
+# ---------------------------------------------------------------------------
+
+def test_node_scripts_load_playwright_from_the_project_folder(wc, ac):
+    assert "createRequire" in wc.PLAYWRIGHT_JS and "cfg.project" in wc.PLAYWRIGHT_JS
+    assert "createRequire" in ac.ELECTRON_JS and "cfg.cwd" in ac.ELECTRON_JS
+
+
+def test_run_playwright_node_passes_the_project_and_no_environment(tmp_path, wc, monkeypatch):
+    seen = {}
+
+    class Done:
+        stdout, stderr = json.dumps({"done": ["a.png"], "failed": []}), ""
+
+    def fake_run(args, **kw):
+        seen["kw"] = kw
+        seen["cfg"] = json.loads(Path(args[2]).read_text(encoding="utf-8"))
+        return Done()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(wc.shutil, "which", lambda name: "node")
+    monkeypatch.setattr(wc.subprocess, "run", fake_run)
+    assert wc.run_playwright_node([], {"scale": 1.0}) == (["a.png"], [])
+    assert seen["cfg"]["project"] == os.getcwd()
+    assert "env" not in seen["kw"]

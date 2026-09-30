@@ -211,9 +211,9 @@ def test_ios_dry_run_status_bar_clear_stays_last(tmp_path, ac, monkeypatch):
 # CLI level
 # ---------------------------------------------------------------------------
 
-def _run_cli(*args, cwd, env=None):
+def _run_cli(*args, cwd):
     return subprocess.run([sys.executable, str(APP_CAPTURE_SCRIPT), *map(str, args)],
-                          capture_output=True, text=True, timeout=30, cwd=cwd, env=env)
+                          capture_output=True, text=True, timeout=30, cwd=cwd)
 
 
 def test_app_capture_cli_ios_dry_run_reports_warnings_and_restore(tmp_path):
@@ -229,10 +229,8 @@ def test_app_capture_cli_ios_dry_run_reports_warnings_and_restore(tmp_path):
 
 
 def test_app_capture_cli_android_dry_run_has_empty_warnings_and_restore(tmp_path):
-    env = dict(os.environ, PATH="")
-    for var in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
-        env.pop(var, None)
-    r = _run_cli("android", "--screen", "home", "--out", "caps", "--dry-run", cwd=tmp_path, env=env)
+    # a dry run starts nothing, whatever adb this machine has
+    r = _run_cli("android", "--screen", "home", "--out", "caps", "--dry-run", cwd=tmp_path)
 
     assert r.returncode == 0, r.stderr
     res = json.loads(r.stdout.strip().splitlines()[-1])

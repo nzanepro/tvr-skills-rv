@@ -6,8 +6,8 @@ Writes DIR/<version>/<page>__<breakpoint>.png (DIR/<version>-<browser>/... with 
 browsers; DIR/<version>/<breakpoint>/<page>.png with --group-by breakpoint), so two versions
 pair up by relative path:
 
-    web_capture.py http://localhost:3000/ http://localhost:3000/pricing --version after --out caps
-    web_capture.py https://staging.example.com/ https://staging.example.com/pricing --version before --out caps
+    web_capture.py PAGE ... --version after --out caps     # the pages as they are now
+    web_capture.py PAGE ... --version before --out caps    # the same pages from the old build
     compare_dirs.py caps/before caps/after --out review/web        # changed pages, with diffs
     review_set.py caps --out review/versions                       # every page: before, after
 
@@ -20,10 +20,12 @@ browser driven headless from its command line (chrome-cli: viewport only, no ful
 capture, no --wait-for, one browser). Nothing is installed; --list-backends shows what was
 found. Playwright's browsers must have been installed by the user (playwright install).
 
-chrome-cli browser: CHROME_PATH (an executable) always wins; otherwise a chrome-headless-shell
-is preferred (on PATH, then Playwright's copy, newest first; `playwright install chromium`
-fetches it), then an installed Chrome, Chromium or Edge. The browser is stopped as soon as
-the screenshot is complete, since some Chrome builds never exit after writing it.
+chrome-cli browser: --chrome PATH (else "chrome" in ~/.config/tvr-skills-rv/config.json)
+always wins; otherwise a chrome-headless-shell is preferred (on PATH, then Playwright's copy,
+newest first, in --playwright-browsers DIR or "playwright_browsers" in the config file, else
+Playwright's own cache folder), then an installed Chrome, Chromium or Edge. No environment
+variable is read. The browser is stopped as soon as the screenshot is complete, since some
+Chrome builds never exit after writing it.
 
 Full pages: --full-page captures the whole scroll height (Playwright only). Tall pages stay
 one tall frame (RV fits it to the window: F fits, 1 shows 1:1, Alt+drag or middle-drag pans)
@@ -44,6 +46,9 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import pathname2url
+
+sys.path.insert(0, str(Path(os.path.abspath(__file__)).parent))
+import local_config  # noqa: E402  (same folder; standard library only)
 
 DEFAULT_BREAKPOINTS = "mobile=375,tablet=768,desktop=1440"
 DEFAULT_HEIGHT = 900           # viewport height; full-page captures grow beyond it
@@ -67,18 +72,20 @@ class CaptureError(RuntimeError):
 
 # --- finding a browser ------------------------------------------------------------------
 
-def chrome_candidates(env=None, platform=None):
-    """Install locations of Chrome, Edge and Chromium to try, in order, for this OS."""
-    env = os.environ if env is None else env
+def chrome_candidates(platform=None, program_files=None, local=None):
+    """Install locations of Chrome, Edge and Chromium to try, in order, for this OS.
+    program_files / local: Windows Program Files folders and Local AppData (default: the
+    known folders, else the standard places)."""
     p = platform or sys.platform
     out = []
     if p.startswith("win"):
-        for var in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
-            base = env.get(var)
-            if base:
-                out += [Path(base) / "Google" / "Chrome" / "Application" / "chrome.exe",
-                        Path(base) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
-                        Path(base) / "Chromium" / "Application" / "chrome.exe"]
+        bases = list(program_files if program_files is not None
+                     else local_config.program_files_dirs())
+        bases.append(local if local is not None else local_config.local_appdata())
+        for base in map(Path, bases):
+            out += [base / "Google" / "Chrome" / "Application" / "chrome.exe",
+                    base / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+                    base / "Chromium" / "Application" / "chrome.exe"]
     elif p == "darwin":
         for app, exe in (("Google Chrome", "Google Chrome"), ("Chromium", "Chromium"),
                          ("Microsoft Edge", "Microsoft Edge")):
@@ -86,39 +93,32 @@ def chrome_candidates(env=None, platform=None):
     return out
 
 
-def playwright_roots(env=None, platform=None, home=None):
-    """Folders where Playwright keeps its browsers: PLAYWRIGHT_BROWSERS_PATH (unless 0),
-    then the per-user cache of this OS. With an injected env, home comes from HOME /
-    USERPROFILE in it (or the home argument), never from the real user."""
-    real = env is None
-    env = os.environ if real else env
+def playwright_roots(browsers_dir=None, platform=None, home=None, local=None):
+    """Folders where Playwright keeps its browsers: browsers_dir (--playwright-browsers or the
+    config file; "0" means none), then Playwright's default cache for this OS:
+    <Local AppData>/ms-playwright, ~/Library/Caches/ms-playwright, ~/.cache/ms-playwright."""
     p = platform or sys.platform
-    if home is None:
-        home = os.path.expanduser("~") if real else (env.get("HOME") or env.get("USERPROFILE"))
     roots = []
-    custom = env.get("PLAYWRIGHT_BROWSERS_PATH")
-    if custom and custom != "0":
-        roots.append(Path(custom))
+    if browsers_dir and str(browsers_dir) != "0":
+        roots.append(Path(browsers_dir))
     if p.startswith("win"):
-        if env.get("LOCALAPPDATA"):
-            roots.append(Path(env["LOCALAPPDATA"]) / "ms-playwright")
+        base = Path(local) if local is not None else local_config.local_appdata(home)
+        roots.append(base / "ms-playwright")
     elif p == "darwin":
-        if home:
-            roots.append(Path(home) / "Library" / "Caches" / "ms-playwright")
+        roots.append((Path.home() if home is None else Path(home)) / "Library" / "Caches"
+                     / "ms-playwright")
     else:
-        cache = env.get("XDG_CACHE_HOME") or (str(Path(home) / ".cache") if home else None)
-        if cache:
-            roots.append(Path(cache) / "ms-playwright")
+        roots.append((Path.home() if home is None else Path(home)) / ".cache" / "ms-playwright")
     return roots
 
 
-def headless_shell_candidates(env=None, platform=None, home=None):
+def headless_shell_candidates(browsers_dir=None, platform=None, home=None, local=None):
     """Playwright's chrome-headless-shell executables, newest revision first
     (<root>/chromium_headless_shell-NNNN/chrome-headless-shell-<os>/chrome-headless-shell)."""
     p = platform or sys.platform
     exe = "chrome-headless-shell.exe" if p.startswith("win") else "chrome-headless-shell"
     out = []
-    for root in playwright_roots(env, platform, home):
+    for root in playwright_roots(browsers_dir, platform, home, local):
         try:
             entries = list(root.iterdir()) if root.is_dir() else []
         except OSError:
@@ -141,28 +141,40 @@ def is_headless_shell(chrome):
     return name.startswith("chrome-headless-shell") or name.startswith("headless_shell")
 
 
-def find_chrome(env=None, platform=None, which=shutil.which, home=None):
-    """Executable for the chrome-cli backend, or None. Order: CHROME_PATH (if it is a file);
-    chrome-headless-shell on PATH; Playwright's chrome-headless-shell, newest first; Chrome,
-    Chromium or Edge on PATH; their usual install locations."""
-    e = os.environ if env is None else env
-    if e.get("CHROME_PATH") and Path(e["CHROME_PATH"]).is_file():
-        return str(e["CHROME_PATH"])
+def browser_settings(chrome=None, browsers_dir=None, config=None, home=None):
+    """(chrome, browsers_dir) from the flags, else the config file ("chrome",
+    "playwright_browsers"). A chrome that is given but is not a file is a CaptureError."""
+    try:
+        chrome, source = local_config.setting(chrome, "chrome", config, home)
+        browsers_dir, _ = local_config.setting(browsers_dir, "playwright_browsers", config, home)
+    except local_config.ConfigError as exc:
+        raise CaptureError(f"config file problem: {exc}") from None
+    if chrome and not Path(chrome).is_file():
+        where = "--chrome" if source == "flag" else f"chrome in {local_config.config_path(home)}"
+        raise CaptureError(f"{where} is {chrome}, which is not a file; point it at a Chrome, "
+                           f"Chromium, Edge or chrome-headless-shell executable")
+    return chrome, browsers_dir
 
-    def look(n):
-        return which(n, path=e.get("PATH")) if which is shutil.which else which(n)
+
+def find_chrome(chrome=None, browsers_dir=None, platform=None, which=shutil.which, home=None,
+                program_files=None, local=None):
+    """Executable for the chrome-cli backend, or None. Order: chrome (--chrome or the config
+    file, if it is a file); chrome-headless-shell on PATH; Playwright's chrome-headless-shell,
+    newest first; Chrome, Chromium or Edge on PATH; their usual install locations."""
+    if chrome and Path(chrome).is_file():
+        return str(chrome)
     for n in SHELL_NAMES:
-        hit = look(n)
+        hit = which(n)
         if hit:
             return hit
-    for c in headless_shell_candidates(env, platform, home):
+    for c in headless_shell_candidates(browsers_dir, platform, home, local):
         if c.is_file():
             return str(c)
     for n in CHROME_NAMES:
-        hit = look(n)
+        hit = which(n)
         if hit:
             return hit
-    for c in chrome_candidates(e, platform):
+    for c in chrome_candidates(platform, program_files, local):
         if c.is_file():
             return str(c)
     return None
@@ -188,11 +200,11 @@ def has_playwright_node(cwd=None, which=shutil.which):
     return r.returncode == 0
 
 
-def detect_backends(cwd=None):
+def detect_backends(cwd=None, chrome=None, browsers_dir=None):
     """{backend: detail or None} for every backend, in preference order."""
     return {"playwright-python": "python package" if has_playwright_python() else None,
             "playwright-node": "node package" if has_playwright_node(cwd) else None,
-            "chrome-cli": find_chrome()}
+            "chrome-cli": find_chrome(chrome, browsers_dir)}
 
 
 def pick_backend(wanted="auto", found=None):
@@ -207,7 +219,7 @@ def pick_backend(wanted="auto", found=None):
             return b
     raise CaptureError("no capture backend found: install Playwright (pip install playwright, "
                        "then playwright install chromium; or npm i -D playwright in the "
-                       "project) or a Chrome / Edge / Chromium browser, or set CHROME_PATH")
+                       "project) or a Chrome / Edge / Chromium browser, or pass --chrome PATH")
 
 
 # --- names, breakpoints, jobs -----------------------------------------------------------
@@ -498,7 +510,7 @@ def chrome_screenshot(chrome, url, out, width, height, scale=1.0, color_scheme=N
 
 def run_chrome_cli(jobs, opts, chrome=None, shoot=None):
     """Capture jobs with a headless browser; returns (done, failed, notes)."""
-    chrome = chrome or find_chrome()
+    chrome = chrome or find_chrome(opts.get("chrome"), opts.get("playwright_browsers"))
     shoot = shoot or chrome_screenshot
     scale = opts.get("scale", 1.0)
     done, failed, stopped = [], [], 0
@@ -516,7 +528,7 @@ def run_chrome_cli(jobs, opts, chrome=None, shoot=None):
     if stopped:
         notes.append(f"the browser kept running after {stopped} screenshot(s) and was stopped "
                      f"once each file was complete (a chrome-headless-shell avoids this; "
-                     f"see CHROME_PATH)")
+                     f"pass it with --chrome)")
     return done, failed, notes
 
 
@@ -535,8 +547,9 @@ def _fix_size(path, w, h):
 
 
 PLAYWRIGHT_JS = r"""
-const pw = require('playwright');
 const cfg = JSON.parse(require('fs').readFileSync(process.argv[2], 'utf8'));
+// the project's own Playwright: resolve it from the project folder, not this temp script's
+const pw = require('module').createRequire(require('path').join(cfg.project, 'package.json'))('playwright');
 (async () => {
   const results = {done: [], failed: []};
   const byBrowser = {};
@@ -573,12 +586,10 @@ def run_playwright_node(jobs, opts):
     with tempfile.TemporaryDirectory(prefix="rv-review-pw-") as tmp:
         script, cfg = Path(tmp) / "capture.js", Path(tmp) / "jobs.json"
         script.write_text(PLAYWRIGHT_JS, encoding="utf-8")
-        cfg.write_text(json.dumps(dict(opts, jobs=jobs)), encoding="utf-8")
-        # run from the current folder so require('playwright') finds the project's copy
-        env = dict(os.environ, NODE_PATH=os.pathsep.join(
-            filter(None, [os.environ.get("NODE_PATH"), str(Path.cwd() / "node_modules")])))
+        # the script loads Playwright from the current (project) folder by its path
+        cfg.write_text(json.dumps(dict(opts, jobs=jobs, project=os.getcwd())), encoding="utf-8")
         r = subprocess.run([node, str(script), str(cfg)], capture_output=True, text=True,
-                           cwd=os.getcwd(), env=env)
+                           cwd=os.getcwd())
     try:
         res = json.loads(r.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
@@ -688,6 +699,13 @@ def build_parser():
     ap.add_argument("--reduced-motion", action="store_true", help="prefers-reduced-motion: reduce")
     ap.add_argument("--transparent", action="store_true", help="keep a transparent page background")
     ap.add_argument("--backend", choices=("auto",) + BACKENDS, default="auto")
+    ap.add_argument("--chrome", metavar="PATH",
+                    help="browser executable for the chrome-cli backend (default: \"chrome\" in "
+                         "~/.config/tvr-skills-rv/config.json, else the lookup above)")
+    ap.add_argument("--playwright-browsers", metavar="DIR",
+                    help="folder of Playwright's browsers to search for chrome-headless-shell "
+                         "(default: \"playwright_browsers\" in the config file, else "
+                         "Playwright's cache folder)")
     ap.add_argument("--list-backends", action="store_true", help="show what was found and exit")
     ap.add_argument("--dry-run", action="store_true", help="print the capture plan only")
     return ap
@@ -696,8 +714,9 @@ def build_parser():
 def main(argv=None):
     a = build_parser().parse_args(argv)
     try:
+        chrome, browsers_dir = browser_settings(a.chrome, a.playwright_browsers)
         if a.list_backends:
-            found = detect_backends()
+            found = detect_backends(chrome=chrome, browsers_dir=browsers_dir)
             print(json.dumps({"ok": True, "backends": found,
                               "first": next((b for b in BACKENDS if found.get(b)), None)}))
             return 0
@@ -714,11 +733,13 @@ def main(argv=None):
         opts = {"scale": a.scale, "color_scheme": a.color_scheme, "locale": a.locale,
                 "reduced_motion": a.reduced_motion, "full_page": a.full_page,
                 "wait_for": a.wait_for, "wait_ms": a.wait_ms, "wait_until": a.wait_until,
-                "timeout": NAV_TIMEOUT_MS, "transparent": a.transparent}
+                "timeout": NAV_TIMEOUT_MS, "transparent": a.transparent,
+                "chrome": chrome, "playwright_browsers": browsers_dir}
         if a.dry_run:
             print(json.dumps({"ok": True, "dry_run": True, "jobs": jobs}))
             return 0
-        backend = pick_backend(a.backend)
+        backend = pick_backend(a.backend, detect_backends(chrome=chrome,
+                                                          browsers_dir=browsers_dir))
         done, failed, notes = capture(jobs, backend, opts)
         if a.tile_height:
             done = [t for d in done for t in tile(d, a.tile_height)]

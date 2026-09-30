@@ -16,8 +16,9 @@ first (by hand, a UI test, or a deep link), run this once per screen, then:
 
 The device settings changed for the capture (appearance, text size, night mode, font scale,
 display size) are put back afterwards. Nothing is installed: iOS needs macOS with Xcode's
-xcrun simctl and a booted simulator; Android needs adb (PATH, ANDROID_HOME or
-ANDROID_SDK_ROOT) and one device or emulator (or --serial); Electron needs Node with the
+xcrun simctl and a booted simulator; Android needs adb (--adb PATH, else "adb" in
+~/.config/tvr-skills-rv/config.json, else PATH, else the Android SDK's default folder) and one
+device or emulator (or --serial); no environment variable is read. Electron needs Node with the
 project's own Playwright (Playwright's Electron support is experimental). --dry-run prints the
 commands without running anything, on any OS.
 
@@ -39,6 +40,9 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(os.path.abspath(__file__)).parent))
+import local_config  # noqa: E402  (same folder; standard library only)
 
 SETTLE_S = 1.5        # UI re-layout after an appearance / text size change before the screenshot
 IOS_CONTENT_SIZES = ("extra-small", "small", "medium", "large", "extra-large", "extra-extra-large",
@@ -143,16 +147,39 @@ def _plan_ios_restore(get_cmd, set_prefix, setting, canonicalize, warnings):
 
 # --- Android ----------------------------------------------------------------------------
 
-def find_adb(env=None, which=shutil.which):
-    env = os.environ if env is None else env
+def default_adb_paths(platform=None, home=None, local=None):
+    """Where Android Studio puts the SDK's adb by default: macOS ~/Library/Android/sdk,
+    Linux ~/Android/Sdk, Windows <Local AppData>/Android/Sdk (then platform-tools/adb)."""
+    kind = local_config.os_kind(platform)
+    if kind == "windows":
+        base = Path(local) if local is not None else local_config.local_appdata(home)
+        return [base / "Android" / "Sdk" / "platform-tools" / "adb.exe"]
+    home = Path.home() if home is None else Path(home)
+    if kind == "macos":
+        return [home / "Library" / "Android" / "sdk" / "platform-tools" / "adb"]
+    return [home / "Android" / "Sdk" / "platform-tools" / "adb"]
+
+
+def find_adb(adb=None, which=shutil.which, platform=None, home=None, local=None, config=None):
+    """adb to use, or None: --adb (else "adb" in the config file), then PATH, then the SDK's
+    default folder. A given adb that is not a file, or a broken config file, is a
+    CaptureError."""
+    try:
+        adb, source = local_config.setting(adb, "adb", config, home)
+    except local_config.ConfigError as exc:
+        raise CaptureError(f"config file problem: {exc}") from None
+    if adb:
+        if not Path(adb).is_file():
+            where = "--adb" if source == "flag" else f"adb in {local_config.config_path(home)}"
+            raise CaptureError(f"{where} is {adb}, which is not a file; point it at "
+                               f"<Android SDK>/platform-tools/adb")
+        return str(adb)
     hit = which("adb")
     if hit:
         return hit
-    for var in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
-        if env.get(var):
-            p = Path(env[var]) / "platform-tools" / ("adb.exe" if os.name == "nt" else "adb")
-            if p.is_file():
-                return str(p)
+    for p in default_adb_paths(platform, home, local):
+        if p.is_file():
+            return str(p)
     return None
 
 
@@ -289,10 +316,12 @@ def capture_ios(a, dry):
 
 
 def capture_android(a, dry):
-    adb = find_adb() or ("adb" if dry else None)
+    adb = find_adb(a.adb) or ("adb" if dry else None)
     if not adb:
-        raise CaptureError("adb not found on PATH, ANDROID_HOME or ANDROID_SDK_ROOT; install the "
-                           "Android platform-tools or use --dry-run to see the commands")
+        raise CaptureError("adb not found: pass --adb <Android SDK>/platform-tools/adb, put it in "
+                           "~/.config/tvr-skills-rv/config.json as \"adb\", put platform-tools "
+                           "on PATH, or install the SDK in its default folder; or use --dry-run "
+                           "to see the commands")
     base = [adb] + (["-s", a.serial] if a.serial else [])
     if not dry:
         devs = [ln.split()[0] for ln in _run([adb, "devices"], dry, []).splitlines()[1:]
@@ -344,8 +373,10 @@ def capture_android(a, dry):
 
 
 ELECTRON_JS = r"""
-const { _electron: electron } = require('playwright');
 const cfg = JSON.parse(require('fs').readFileSync(process.argv[2], 'utf8'));
+// the project's own Playwright: resolve it from the project folder, not this temp script's
+const { _electron: electron } = require('module').createRequire(
+  require('path').join(cfg.cwd, 'package.json'))('playwright');
 (async () => {
   const app = await electron.launch({ args: [cfg.main], cwd: cfg.cwd });
   const win = await app.firstWindow();
@@ -396,9 +427,8 @@ def capture_electron(a, dry):
         script, conf = Path(tmp) / "cap.js", Path(tmp) / "cfg.json"
         script.write_text(ELECTRON_JS, encoding="utf-8")
         conf.write_text(json.dumps(cfg), encoding="utf-8")
-        env = dict(os.environ, NODE_PATH=os.pathsep.join(
-            filter(None, [os.environ.get("NODE_PATH"), str(Path.cwd() / "node_modules")])))
-        r = subprocess.run([node, str(script), str(conf)], capture_output=True, text=True, env=env)
+        r = subprocess.run([node, str(script), str(conf)], capture_output=True, text=True,
+                           cwd=os.getcwd())
     if r.returncode != 0:
         raise CaptureError(f"Electron capture failed (is playwright installed in this project?): "
                            f"{r.stderr[-400:]}")
@@ -441,6 +471,9 @@ def build_parser():
     d.add_argument("--font-scale", help="comma list like 1.0,1.3,2.0")
     d.add_argument("--display", help="comma list of WIDTHxHEIGHT[@DENSITY] to emulate other devices")
     d.add_argument("--demo-mode", action="store_true", help="SystemUI demo mode: fixed status bar")
+    d.add_argument("--adb", metavar="PATH",
+                   help="adb executable (default: \"adb\" in ~/.config/tvr-skills-rv/config.json, "
+                        "else PATH, else the Android SDK's default folder)")
     e = sub.add_parser("electron", help="Electron app through the project's Playwright (Node)",
                        description="Launch an Electron app with Playwright and capture its "
                                    "first window at several sizes and colour schemes.")

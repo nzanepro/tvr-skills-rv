@@ -1,7 +1,8 @@
 """Tests for the headless-browser path shared by web_capture.py and rasterize.py:
 
-- find_chrome's order: CHROME_PATH, chrome-headless-shell on PATH, Playwright's headless shell
-  (newest revision first, per OS, PLAYWRIGHT_BROWSERS_PATH), then Chrome / Edge / Chromium;
+- find_chrome's order: --chrome (or the config file's "chrome"), chrome-headless-shell on
+  PATH, Playwright's headless shell (newest revision first, per OS, --playwright-browsers),
+  then Chrome / Edge / Chromium;
 - chrome_args for a headless shell;
 - run_chrome_command / chrome_screenshot: some Chrome builds write the screenshot and never
   exit, so the runner stops the browser (and its children) once the file is complete.
@@ -150,86 +151,117 @@ def _shell_tree(root, platform, revisions):
     return out
 
 
-def _platform_env(tmp_path, platform):
-    """(env, playwright cache root) for a platform, all under tmp_path."""
+def _platform_where(tmp_path, platform):
+    """(find_chrome keyword arguments, Playwright cache root) for a platform, under tmp_path."""
     home = tmp_path / "home"
+    kw = {"home": home, "local": tmp_path / "local", "program_files": [tmp_path / "pf"]}
     if platform == "win32":
-        env = {"LOCALAPPDATA": str(tmp_path / "local"), "USERPROFILE": str(home)}
-        return env, tmp_path / "local" / "ms-playwright"
+        return kw, tmp_path / "local" / "ms-playwright"
     if platform == "darwin":
-        return {"HOME": str(home)}, home / "Library" / "Caches" / "ms-playwright"
-    return {"HOME": str(home)}, home / ".cache" / "ms-playwright"
+        return kw, home / "Library" / "Caches" / "ms-playwright"
+    return kw, home / ".cache" / "ms-playwright"
 
 
-def test_find_chrome_env_var_wins_over_headless_shells(tmp_path, wc):
-    env, root = _platform_env(tmp_path, "linux")
+def test_find_chrome_flag_wins_over_headless_shells(tmp_path, wc):
+    kw, root = _platform_where(tmp_path, "linux")
     _shell_tree(root, "linux", [1169])
     exe = _exe(tmp_path / "my-chrome")
-    env["CHROME_PATH"] = str(exe)
     which = _which_only("chrome-headless-shell", "google-chrome")
-    assert wc.find_chrome(env=env, platform="linux", which=which) == str(exe)
+    assert wc.find_chrome(str(exe), platform="linux", which=which, **kw) == str(exe)
     assert which.calls == []
 
 
 def test_find_chrome_prefers_headless_shell_on_path(tmp_path, wc):
-    env, root = _platform_env(tmp_path, "linux")
+    kw, root = _platform_where(tmp_path, "linux")
     _shell_tree(root, "linux", [1169])
     which = _which_only("chrome-headless-shell", "google-chrome")
-    assert wc.find_chrome(env=env, platform="linux", which=which) == "fake/chrome-headless-shell"
+    assert wc.find_chrome(platform="linux", which=which, **kw) == "fake/chrome-headless-shell"
     assert which.calls == ["chrome-headless-shell"]
 
 
 @pytest.mark.parametrize("platform", ["win32", "darwin", "linux"])
 def test_find_chrome_playwright_shell_newest_first_before_browsers(tmp_path, wc, platform):
-    env, root = _platform_env(tmp_path, platform)
+    kw, root = _platform_where(tmp_path, platform)
     shells = _shell_tree(root, platform, [999, 1169, 1100])
     which = _which_only("google-chrome", "msedge")
-    assert wc.find_chrome(env=env, platform=platform, which=which) == str(shells[1169])
+    assert wc.find_chrome(platform=platform, which=which, **kw) == str(shells[1169])
     # revision order is numeric, not alphabetical (999 sorts after 1169 as text)
-    cands = wc.headless_shell_candidates(env, platform)
+    cands = wc.headless_shell_candidates(None, platform, kw["home"], kw["local"])
     assert cands == [shells[1169], shells[1100], shells[999]]
 
 
 def test_find_chrome_skips_shell_revision_without_executable(tmp_path, wc):
-    env, root = _platform_env(tmp_path, "linux")
+    kw, root = _platform_where(tmp_path, "linux")
     shells = _shell_tree(root, "linux", [1169])
     (root / "chromium_headless_shell-1200" / "chrome-headless-shell-linux64").mkdir(parents=True)
-    assert wc.find_chrome(env=env, platform="linux", which=_which_only()) == str(shells[1169])
+    assert wc.find_chrome(platform="linux", which=_which_only(), **kw) == str(shells[1169])
 
 
 def test_find_chrome_falls_back_to_browsers_without_a_shell(tmp_path, wc):
-    env, _ = _platform_env(tmp_path, "linux")
+    kw, _ = _platform_where(tmp_path, "linux")
     which = _which_only("chromium", "msedge")
-    assert wc.find_chrome(env=env, platform="linux", which=which) == "fake/chromium"
+    assert wc.find_chrome(platform="linux", which=which, **kw) == "fake/chromium"
     assert which.calls[0] == "chrome-headless-shell"
 
 
-def test_playwright_browsers_path_is_honoured_first(tmp_path, wc):
-    env, root = _platform_env(tmp_path, "darwin")
+def test_find_chrome_windows_install_folders(tmp_path, wc):
+    kw, _ = _platform_where(tmp_path, "win32")
+    edge = _exe(tmp_path / "local" / "Microsoft" / "Edge" / "Application" / "msedge.exe")
+    assert wc.find_chrome(platform="win32", which=_which_only(), **kw) == str(edge)
+    chrome = _exe(tmp_path / "pf" / "Google" / "Chrome" / "Application" / "chrome.exe")
+    assert wc.find_chrome(platform="win32", which=_which_only(), **kw) == str(chrome)
+
+
+def test_playwright_browsers_folder_is_searched_first(tmp_path, wc):
+    kw, root = _platform_where(tmp_path, "darwin")
     default = _shell_tree(root, "darwin", [1300])
     custom = _shell_tree(tmp_path / "pw", "darwin", [1000])
-    env["PLAYWRIGHT_BROWSERS_PATH"] = str(tmp_path / "pw")
-    assert wc.find_chrome(env=env, platform="darwin", which=_which_only()) == str(custom[1000])
-    assert wc.headless_shell_candidates(env, "darwin") == [custom[1000], default[1300]]
+    assert wc.find_chrome(browsers_dir=str(tmp_path / "pw"), platform="darwin",
+                          which=_which_only(), **kw) == str(custom[1000])
+    assert wc.headless_shell_candidates(str(tmp_path / "pw"), "darwin", kw["home"]) == \
+        [custom[1000], default[1300]]
 
 
-def test_playwright_browsers_path_zero_is_ignored(tmp_path, wc):
-    env, root = _platform_env(tmp_path, "linux")
+def test_playwright_browsers_zero_is_ignored(tmp_path, wc):
+    kw, root = _platform_where(tmp_path, "linux")
     shells = _shell_tree(root, "linux", [1169])
-    env["PLAYWRIGHT_BROWSERS_PATH"] = "0"
-    assert wc.playwright_roots(env, "linux") == [root]
-    assert wc.find_chrome(env=env, platform="linux", which=_which_only()) == str(shells[1169])
+    assert wc.playwright_roots("0", "linux", kw["home"]) == [root]
+    assert wc.find_chrome(browsers_dir="0", platform="linux", which=_which_only(),
+                          **kw) == str(shells[1169])
 
 
-def test_playwright_roots_per_platform(tmp_path, wc):
-    assert wc.playwright_roots({"LOCALAPPDATA": "L"}, "win32") == [Path("L") / "ms-playwright"]
-    assert wc.playwright_roots({}, "win32") == []
-    assert wc.playwright_roots({}, "darwin", home="H") == [
+def test_playwright_roots_per_platform(wc):
+    assert wc.playwright_roots(None, "win32", local="L") == [Path("L") / "ms-playwright"]
+    assert wc.playwright_roots(None, "win32", home="H") == [
+        Path("H") / "AppData" / "Local" / "ms-playwright"]
+    assert wc.playwright_roots(None, "darwin", home="H") == [
         Path("H") / "Library" / "Caches" / "ms-playwright"]
-    assert wc.playwright_roots({"HOME": "H"}, "linux") == [Path("H") / ".cache" / "ms-playwright"]
-    assert wc.playwright_roots({"HOME": "H", "XDG_CACHE_HOME": "X"}, "linux") == [
-        Path("X") / "ms-playwright"]
-    assert wc.playwright_roots({}, "linux") == []          # injected env: never the real home
+    assert wc.playwright_roots(None, "linux", home="H") == [Path("H") / ".cache" / "ms-playwright"]
+    assert wc.playwright_roots("P", "linux", home="H") == [Path("P"), Path("H") / ".cache" / "ms-playwright"]
+
+
+def test_browser_settings_flag_then_config_file(tmp_path, wc):
+    exe = _exe(tmp_path / "chrome-bin")
+    assert wc.browser_settings(str(exe), None, config={}) == (str(exe), None)
+    got = wc.browser_settings(None, None, home=tmp_path,
+                              config={"chrome": "~/chrome-bin", "playwright_browsers": "~/pw"})
+    assert got == (str(tmp_path / "chrome-bin"), str(tmp_path / "pw"))
+
+
+def test_browser_settings_chrome_that_is_not_a_file_is_an_error(tmp_path, wc):
+    with pytest.raises(wc.CaptureError, match="--chrome"):
+        wc.browser_settings(str(tmp_path / "missing"), None, config={})
+    with pytest.raises(wc.CaptureError, match="config.json"):
+        wc.browser_settings(None, None, config={"chrome": str(tmp_path / "missing")},
+                            home=tmp_path)
+
+
+def test_browser_settings_broken_config_file(tmp_path, wc):
+    cfg = tmp_path / ".config" / "tvr-skills-rv" / "config.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text("[]")
+    with pytest.raises(wc.CaptureError, match="config file problem"):
+        wc.browser_settings(None, None, home=tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -404,22 +436,29 @@ def test_rasterize_chrome_backend_with_a_browser_that_never_exits(tmp_path, rz, 
 # CLI: which browser was picked, and help
 # ---------------------------------------------------------------------------
 
-def _cli(script, *args, env=None):
+def _cli(script, *args):
     return subprocess.run([sys.executable, str(SCRIPTS / script), *args], capture_output=True,
-                          text=True, timeout=60, env=env)
+                          text=True, timeout=60)
 
 
-def test_list_backends_shows_the_chrome_path_picked(tmp_path):
+def test_list_backends_shows_the_chrome_flag_picked(tmp_path):
     exe = _exe(tmp_path / "chrome-headless-shell")
-    env = dict(os.environ, CHROME_PATH=str(exe))
     for script, key in (("web_capture.py", "chrome-cli"), ("rasterize.py", "chrome")):
-        r = _cli(script, "--list-backends", env=env)
+        r = _cli(script, "--list-backends", "--chrome", str(exe))
         assert r.returncode == 0, r.stderr
         assert json.loads(r.stdout.strip().splitlines()[-1])["backends"][key] == str(exe)
 
 
 @pytest.mark.parametrize("script", ["web_capture.py", "rasterize.py"])
-def test_help_mentions_chrome_path_and_headless_shell(script):
+def test_list_backends_with_a_missing_chrome_is_an_error(tmp_path, script):
+    r = _cli(script, "--list-backends", "--chrome", str(tmp_path / "missing"))
+    assert r.returncode == 2
+    assert "not a file" in json.loads(r.stdout.strip().splitlines()[-1])["error"]
+
+
+@pytest.mark.parametrize("script", ["web_capture.py", "rasterize.py"])
+def test_help_mentions_chrome_flag_and_headless_shell(script):
     r = _cli(script, "--help")
     assert r.returncode == 0
-    assert "CHROME_PATH" in r.stdout and "chrome-headless-shell" in r.stdout
+    assert "--chrome" in r.stdout and "chrome-headless-shell" in r.stdout
+    assert "config.json" in r.stdout

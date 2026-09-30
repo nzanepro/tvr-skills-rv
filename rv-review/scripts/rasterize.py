@@ -10,9 +10,10 @@ installed by this script):
     cairosvg       the CairoSVG Python package (import cairosvg)
     inkscape       Inkscape 1.x command line
     playwright     Playwright for Python with its Chromium (a browser renders the SVG)
-    chrome         a headless browser from its command line: CHROME_PATH if set, else a
-                   chrome-headless-shell (on PATH or Playwright's, newest first), else an
-                   installed Chrome, Edge or Chromium
+    chrome         a headless browser from its command line: --chrome PATH (else "chrome"
+                   in ~/.config/tvr-skills-rv/config.json), else a chrome-headless-shell (on
+                   PATH or Playwright's, newest first), else an installed Chrome, Edge or
+                   Chromium
 Renderers differ in font fallback, filters and text layout: rasterise every version of a file
 with the same backend (the script does, and reports which) before comparing them.
 
@@ -39,6 +40,9 @@ import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.request import pathname2url
+
+sys.path.insert(0, str(Path(os.path.abspath(__file__)).parent))
+import local_config  # noqa: E402  (same folder; standard library only)
 
 BACKENDS = ("resvg", "rsvg-convert", "cairosvg", "inkscape", "playwright", "chrome")
 DEFAULT_SIZE = (300.0, 150.0)          # what browsers use for an SVG without any size
@@ -103,16 +107,17 @@ def target_size(path, width=None, height=None, scale=1.0):
 
 # --- backend detection ------------------------------------------------------------------
 
-def _inkscape(which=shutil.which, platform=None):
+def _inkscape(which=shutil.which, platform=None, program_files=None):
+    """Inkscape on PATH, else its usual install place (Windows Program Files: the known
+    folders, else C:/Program Files and C:/Program Files (x86); macOS /Applications)."""
     hit = which("inkscape")
     if hit:
         return hit
     p = platform or sys.platform
     cands = []
     if p.startswith("win"):
-        for var in ("ProgramFiles", "ProgramFiles(x86)"):
-            if os.environ.get(var):
-                cands.append(Path(os.environ[var]) / "Inkscape" / "bin" / "inkscape.exe")
+        bases = program_files if program_files is not None else local_config.program_files_dirs()
+        cands += [Path(b) / "Inkscape" / "bin" / "inkscape.exe" for b in bases]
     elif p == "darwin":
         cands.append(Path("/Applications/Inkscape.app/Contents/MacOS/inkscape"))
     return next((str(c) for c in cands if c.is_file()), None)
@@ -126,11 +131,15 @@ def _module(name):
         return False
 
 
-def detect(which=shutil.which, has_module=_module, find_chrome=None, platform=None):
-    """{backend: path or 'python package' or None}, in the order they are tried."""
+def detect(which=shutil.which, has_module=_module, find_chrome=None, platform=None,
+           chrome=None, browsers_dir=None):
+    """{backend: path or 'python package' or None}, in the order they are tried. chrome /
+    browsers_dir: --chrome and --playwright-browsers (or their config file values)."""
     if find_chrome is None:
         import web_capture
-        find_chrome = web_capture.find_chrome
+
+        def find_chrome():
+            return web_capture.find_chrome(chrome, browsers_dir)
     return {"resvg": which("resvg"),
             "rsvg-convert": which("rsvg-convert"),
             "cairosvg": "python package" if has_module("cairosvg") else None,
@@ -262,10 +271,10 @@ def build_parser():
                                  epilog="examples:\n"
                                         "  python rasterize.py icons/v1/*.svg --out review/v1 --scale 4 --background checker\n"
                                         "  python rasterize.py logo_v1.svg logo_v2.svg --same-size --width 1024 --out review/logo\n"
-                                        "\nenvironment:\n"
-                                        "  CHROME_PATH   executable for the chrome backend; wins over the lookup, which\n"
-                                        "                prefers a chrome-headless-shell (PATH, then Playwright's cache,\n"
-                                        "                PLAYWRIGHT_BROWSERS_PATH honoured) over Chrome / Edge / Chromium")
+                                        "\nchrome backend: --chrome PATH wins over the lookup, which prefers a\n"
+                                        "chrome-headless-shell (PATH, then Playwright's browsers in --playwright-browsers\n"
+                                        "or its cache folder) over Chrome / Edge / Chromium. Both flags default to\n"
+                                        "\"chrome\" / \"playwright_browsers\" in ~/.config/tvr-skills-rv/config.json.")
     ap.add_argument("svgs", nargs="*", metavar="SVG")
     ap.add_argument("--out", metavar="DIR", help="folder for the PNGs")
     ap.add_argument("--width", type=int, help="output width in px (keeps the aspect)")
@@ -276,6 +285,9 @@ def build_parser():
     ap.add_argument("--background", default="transparent",
                     help="transparent (default), checker, or a colour like #ffffff")
     ap.add_argument("--backend", choices=BACKENDS, help="force a backend")
+    ap.add_argument("--chrome", metavar="PATH", help="browser executable for the chrome backend")
+    ap.add_argument("--playwright-browsers", metavar="DIR",
+                    help="folder of Playwright's browsers to search for chrome-headless-shell")
     ap.add_argument("--list-backends", action="store_true", help="show what is installed and exit")
     return ap
 
@@ -283,7 +295,12 @@ def build_parser():
 def main(argv=None):
     a = build_parser().parse_args(argv)
     try:
-        found = detect()
+        import web_capture
+        try:
+            chrome, browsers_dir = web_capture.browser_settings(a.chrome, a.playwright_browsers)
+        except web_capture.CaptureError as e:
+            raise RasterizeError(str(e)) from None
+        found = detect(chrome=chrome, browsers_dir=browsers_dir)
         if a.list_backends:
             print(json.dumps({"ok": True, "backends": found,
                               "first": next((b for b in BACKENDS if found.get(b)), None)}))
