@@ -1,7 +1,7 @@
 {
   "name": "rv",
   "version": "0.2.3",
-  "description": "Agent Skills for RV, OpenRV and Autodesk RV / ShotGrid RV: labelled flipbook review and A/B compare, plus the command-line tools rvio (convert and transcode, slates, burn-ins, LUTs), rvls (list sequences, find missing frames, read headers) and rvpkg (install and manage RV packages), with baseline vs candidate comparison for renders, UI and web screenshots, .rv sessions and review notes. Free and MIT-licensed; if it saves you time: buymeacoffee.com/trespassvr",
+  "description": "Agent Skills for RV, OpenRV and Autodesk RV / ShotGrid RV: labelled flipbook review and A/B compare, plus the command-line tools rvio (convert and transcode, slates, burn-ins, LUTs), rvls (list sequences, find missing frames, read headers) and rvpkg (install and manage RV packages), with baseline vs candidate comparison for renders, UI and web screenshots, .rv sessions and review notes. Desktop only: needs RV or OpenRV installed; does not work on claude.ai web or mobile. Free and MIT-licensed; if it saves you time: buymeacoffee.com/trespassvr",
   "author": {
     "name": "nzanepro",
     "url": "https://github.com/nzanepro"

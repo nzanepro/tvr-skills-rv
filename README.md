@@ -6,6 +6,12 @@ window as a labelled flipbook for image and video review, A/B compares versions 
 or difference, and checks the result, like a small dailies session on your own desktop.
 Companion skills drive RV's command-line tools: rvio, rvls and rvpkg.
 
+**Where it works:** Claude Code on a Windows, macOS or Linux computer (the CLI, the desktop
+app or an IDE extension) that has RV or OpenRV installed. No RV yet? The
+[openrv-build-plugin](https://github.com/loorthu/openrv-build-plugin) Claude Code plugin
+builds OpenRV from source (see [See also](#see-also)). It does not work on claude.ai in a web
+browser or in the Claude iOS and Android apps, because those cannot start RV on your computer.
+
 [![tests](https://github.com/nzanepro/tvr-skills-rv/actions/workflows/tests.yml/badge.svg)](https://github.com/nzanepro/tvr-skills-rv/actions/workflows/tests.yml)
 
 ![Claude Code rv-review skill: a synthetic stacked before / after / v2 render comparison sheet is split into one frame per version and shown in OpenRV as a labelled flipbook, with timeline marks at each view](docs/images/rv-flipbook.png)
@@ -71,7 +77,7 @@ so it works with OpenRV and with Autodesk RV / ShotGrid RV.
 | Python 3.9 or later | `python --version` (macOS: `python3 --version`) |
 | numpy and Pillow, for splitting sheets | `python -c "import numpy, PIL"` |
 | Optional: Playwright or Chrome / Edge (web capture, SVG); resvg, rsvg-convert, CairoSVG or Inkscape (SVG); Xcode simctl or adb (mobile) | detected at run time; nothing is installed |
-| A local desktop session (RV opens a window) | |
+| Claude Code on the desktop (CLI, desktop app or IDE extension) and a local desktop session (RV opens a window); not claude.ai on the web or mobile | |
 
 The launcher itself uses only the Python standard library and runs on Windows, macOS and Linux.
 
@@ -133,8 +139,8 @@ cmd /c mklink /J "$env:USERPROFILE\.claude\skills\rv-review" "$PWD\tvr-skills-rv
 **Other Agent Skills clients**: copy `rv-review/` into that client's skills folder (see
 [agentskills.io](https://agentskills.io)). Each skill folder is self-contained.
 
-**claude.ai and the Claude API are not supported**: those run skills in a cloud sandbox, and
-this skill has to open RV on your own machine.
+**claude.ai (web, iOS and Android) and the Claude API are not supported**: they run skills in a
+cloud sandbox, and these skills have to open RV on your own machine.
 
 ## Usage: flipbook, A/B compare and dailies in RV
 
