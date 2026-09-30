@@ -13,8 +13,8 @@ any browser visit. Nothing here:
 - installs or downloads RV/OpenRV, packages, or any other software on its own, or
 - needs, stores, or asks for credentials, tokens, or account details, or
 - reads shell or system variables: programs are found from command-line flags, an optional
-  config file you write yourself (`~/.config/tvr-skills-rv/config.json`, paths only), `PATH`
-  and the usual install folders.
+  config file you write yourself (`~/.config/tvr-skills-rv/config.json`, paths only), the
+  plugin's "RV bin folder" option, `PATH` and the usual install folders.
 
 `rvpkg`-related scripts can install or remove `.rvpkg` packages, but only ones you point them
 at; they do not fetch packages from the network. Because everything runs with the permissions

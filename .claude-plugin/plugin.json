@@ -62,5 +62,13 @@
     "./rvio",
     "./rvls",
     "./rvpkg"
-  ]
+  ],
+  "userConfig": {
+    "rv_bin": {
+      "type": "directory",
+      "title": "RV bin folder (optional)",
+      "description": "Folder that holds rv and rvpush (and rvio, rvls, rvpkg): <install>/bin, or RV.app/Contents/MacOS on macOS. Leave it empty and the skills look in ~/.config/tvr-skills-rv/config.json, on PATH and in the usual install folders.",
+      "required": false
+    }
+  }
 }

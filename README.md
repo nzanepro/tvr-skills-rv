@@ -88,11 +88,12 @@ First match wins; `rvpush` must be in the same folder as `rv`. No shell variable
 | Order | Where | Notes |
 |---|---|---|
 | 1 | `--rv-bin DIR` | folder holding rv and rvpush, the rv executable itself, an install root or an `.app` bundle |
-| 2 | config file | `"rv_bin"` in `~/.config/tvr-skills-rv/config.json`, same forms as `--rv-bin` (a leading `~` is the home folder), for example `{"rv_bin": "/opt/rv/bin"}` |
-| 3 | `PATH` | `rv.exe`, `RV` or `rv` |
-| 4 | Windows registry | `App Paths\rv.exe`, added by the `.reg` files RV ships in `etc/` |
-| 5 | install folders, newest first | Windows `Program Files` and `Program Files (x86)` `\OpenRV*\bin`, `\{Autodesk,ShotGrid,Shotgun}\RV*\bin`; macOS `/Applications` and `~/Applications` `RV*.app` / `OpenRV*.app` `/Contents/MacOS`; Linux `/opt/rv*/bin`, `/opt/RV*/bin`, `/opt/OpenRV*/bin`, `/usr/local/rv*/bin`, `/usr/local/bin` |
-| 6 | OpenRV built from source | an [openrv-build-plugin](https://github.com/loorthu/openrv-build-plugin) checkout (a folder holding `rvcmds.sh`): the current folder or one above it, `~/OpenRV`, or `C:\OpenRV` on Windows; then its `_build/stage/app/RV.app/Contents/MacOS` (macOS) or `_build/stage/app/bin` |
+| 2 | plugin setting "RV bin folder" | set when the plugin is installed or with `/plugin configure`; the skill passes it as `--rv-bin` |
+| 3 | config file | `"rv_bin"` in `~/.config/tvr-skills-rv/config.json`, same forms as `--rv-bin` (a leading `~` is the home folder), for example `{"rv_bin": "/opt/rv/bin"}` |
+| 4 | `PATH` | `rv.exe`, `RV` or `rv` |
+| 5 | Windows registry | `App Paths\rv.exe`, added by the `.reg` files RV ships in `etc/` |
+| 6 | install folders, newest first | Windows `Program Files` and `Program Files (x86)` `\OpenRV*\bin`, `\{Autodesk,ShotGrid,Shotgun}\RV*\bin`; macOS `/Applications` and `~/Applications` `RV*.app` / `OpenRV*.app` `/Contents/MacOS`; Linux `/opt/rv*/bin`, `/opt/RV*/bin`, `/opt/OpenRV*/bin`, `/usr/local/rv*/bin`, `/usr/local/bin` |
+| 7 | OpenRV built from source | an [openrv-build-plugin](https://github.com/loorthu/openrv-build-plugin) checkout (a folder holding `rvcmds.sh`): the current folder or one above it, `~/OpenRV`, or `C:\OpenRV` on Windows; then its `_build/stage/app/RV.app/Contents/MacOS` (macOS) or `_build/stage/app/bin` |
 
 The same config file can also hold `"chrome"` and `"playwright_browsers"` for web capture and
 SVG rendering, and `"adb"` for Android capture; each has a matching flag (`--chrome`,
