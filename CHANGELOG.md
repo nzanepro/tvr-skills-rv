@@ -9,6 +9,27 @@ own version, `metadata.version` in its `SKILL.md`, which changes only when that 
 so a skill's version can be lower than the plugin's; each release's "Versions" line lists the
 skill versions it changed.
 
+## [0.2.4] - 2026-09-29
+
+Fixes for two findings of Anthropic's plugin directory, and documentation; no skill script changed.
+
+### Added
+
+- A plugin icon, icon.svg in `.claude-plugin/` (the directory reported `ICON_MISSING`): a hand-written 256 x 256 SVG in the README demo's colours, showing stacked review frames, the front one split by a wipe between a grey and a copper sphere, over a green timeline bar. `tests/test_plugin_icon.py` checks that it is a square SVG of at least 128 px with no text, scripts, raster images or external references.
+- A "What it runs and what it sends" section in the README: what the scripts start, which environment variables they read (only to find programs), where they write, and that `web_capture.py` loads the pages you give it in a local headless browser. `SECURITY.md` now names that exception to "no network calls".
+- CI runs `claude plugin validate --strict` on the repository and on `plugin.json` with a pinned Claude Code (2.1.284).
+- `scripts/check_repo.py` has a `readme-listing` check: no shell variable or command substitution in the README, and no repository image path in backticks or a code block in any Markdown file.
+
+### Fixed
+
+- The manual install in the README used shell variables for the current folder and the Windows user profile next to the `git clone` URL, which the directory's scanner holds as a local value, possibly a credential, sent off the machine (`MCP_FORWARDS_CREDENTIAL_ENV`). The clone now goes to `~/tvr-skills-rv`, the copy and link use `~` paths, and PowerShell works from the home folder with relative paths. The bash steps also create `~/.claude/skills` first, so `cp -r` no longer turns a missing skills folder into a copy of rv-review.
+- The same kind of wording in the references: `rv-review`'s PowerShell examples start RV from a literal install path (the old one used an undefined variable) and set `RVPUSH_RV_EXECUTABLE_PATH` with `Set-Item Env:`; `RV_INIT` and `RV_HOME` are named instead of written as shell variables; the Playwright baseline update runs the project's own `playwright test` instead of `npx`; and `rvpkg`'s `RV_SUPPORT_PATH` example uses `~/.rv` instead of the home-folder variable.
+- The README's worked example shows commands and their output in separate blocks instead of after shell prompts, and the notes on the README images link to them instead of writing their paths in backticks, which the directory holds for a reviewer.
+
+### Changed
+
+- Versions: plugin 0.2.4; rv-review 0.2.4 and rvpkg 0.1.3 (reference wording only); rvio and rvls stay 0.1.2.
+
 ## [0.2.3] - 2026-09-29
 
 Packaging and documentation; no script or skill behaviour changed.
@@ -125,6 +146,7 @@ Packaging and documentation; no script or skill behaviour changed.
 - Claude Code plugin marketplace (`.claude-plugin/marketplace.json`), trigger evals, tests and
   CI on Windows, macOS and Linux.
 
+[0.2.4]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.4
 [0.2.3]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.3
 [0.2.2]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.2
 [0.2.1]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.1

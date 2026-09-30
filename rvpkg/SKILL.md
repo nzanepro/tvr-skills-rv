@@ -4,7 +4,7 @@ description: "Manages RV / OpenRV packages (.rvpkg plugins) with the rvpkg comma
 license: MIT
 compatibility: Needs RV or OpenRV (rvpkg) and Python 3.9 or later for the helper scripts (standard library only); rvpkg_list.py --parse also works on saved output without RV. Desktop only (Claude Code CLI, desktop app or IDE extension on Windows, macOS or Linux); not claude.ai in a browser or the iOS / Android apps, which cannot run RV on your machine.
 metadata:
-  version: 0.1.2
+  version: 0.1.3
 ---
 
 # Manage RV packages with rvpkg
