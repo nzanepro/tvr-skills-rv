@@ -316,6 +316,8 @@ under 500 lines with its gotchas in the file.
 Images: [the README demo](docs/images/rv-flipbook.png) and
 [the GitHub social preview](docs/images/social-preview.png) (1280 x 640, set in the
 repository's Settings > Social preview) are made from synthetic renders only.
+[The plugin icon](.claude-plugin/icon.svg), which the plugin directory shows, is a
+hand-written SVG in the same colours.
 
 ## Updating
 

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Stacked review frames, the front one split by a wipe over a timeline</title>
+  <defs>
+    <radialGradient id="grey" cx="0.34" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#e2e2ea"/>
+      <stop offset="0.45" stop-color="#8a8a94"/>
+      <stop offset="1" stop-color="#303034"/>
+    </radialGradient>
+    <radialGradient id="copper" cx="0.66" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#f2c08f"/>
+      <stop offset="0.45" stop-color="#b8743f"/>
+      <stop offset="1" stop-color="#3a2416"/>
+    </radialGradient>
+    <clipPath id="frame">
+      <rect x="28" y="74" width="160" height="112" rx="10"/>
+    </clipPath>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="#181818"/>
+  <rect x="1.5" y="1.5" width="253" height="253" rx="54.5" fill="none" stroke="#3e4a60" stroke-width="3"/>
+  <rect x="68" y="34" width="160" height="112" rx="10" fill="#34343a"/>
+  <rect x="48" y="54" width="160" height="112" rx="10" fill="#4e4e56"/>
+  <g clip-path="url(#frame)">
+    <rect x="28" y="74" width="160" height="112" fill="#3e4a60"/>
+    <rect x="28" y="154" width="160" height="32" fill="#2a2724"/>
+    <ellipse cx="108" cy="158" rx="40" ry="7" fill="#141414"/>
+    <path d="M108 88a38 38 0 0 0 0 76z" fill="url(#grey)"/>
+    <path d="M108 88a38 38 0 0 1 0 76z" fill="url(#copper)"/>
+  </g>
+  <rect x="104" y="66" width="8" height="128" rx="4" fill="#f5f5f5"/>
+  <rect x="28" y="208" width="200" height="12" rx="6" fill="#46aa5a"/>
+</svg>
