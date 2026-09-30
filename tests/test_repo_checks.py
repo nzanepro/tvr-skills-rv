@@ -457,6 +457,9 @@ def test_real_plugin_keeps_its_names_and_skills():
     entry = marketplace["plugins"][0]
     assert entry["source"] == "./"
     assert plugin["name"] == "rv"
+    # The directory holds the bare two-letter name as too close to another listing's; the
+    # display name it shows instead says what the plugin is.
+    assert plugin["displayName"] == "RV and OpenRV Media Review"
     assert plugin["skills"] == ["./rv-review", "./rvio", "./rvls", "./rvpkg"]
     # One description, shown both before install (entry) and after (plugin.json).
     assert entry["description"] == plugin["description"]
