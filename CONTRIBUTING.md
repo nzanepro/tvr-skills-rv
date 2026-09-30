@@ -7,6 +7,8 @@ against, or a report that a skill did not trigger when it should have.
 
 ## Before you start
 
+- Everyone taking part in this project's issues and pull requests is expected to follow the
+  [Code of Conduct](CODE_OF_CONDUCT.md).
 - Open an issue first for anything beyond a small fix, so the approach can be agreed before
   you write code.
 - One change per pull request. Keep unrelated formatting out of a functional change.
