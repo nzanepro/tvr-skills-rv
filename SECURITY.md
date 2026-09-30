@@ -20,11 +20,13 @@ you trust, the same as any other local script.
 
 If you find a security issue (for example, a way a script could be made to run unintended
 code, write outside the folder you asked it to, or otherwise behave unsafely), please use
-GitHub's private reporting instead of a public issue:
+GitHub's private vulnerability reporting instead of a public issue:
 
-1. Go to the [Security tab](https://github.com/nzanepro/tvr-skills-rv/security) of this
-   repository.
-2. Click "Report a vulnerability" to open a private advisory.
+1. Open [Report a vulnerability](https://github.com/nzanepro/tvr-skills-rv/security/advisories/new)
+   while signed in to GitHub (or, on the repository's main page, click the
+   **Security and quality** tab, then **Report a vulnerability**).
+2. Fill in the form (only the title and description are required) and click
+   **Submit report**. Only you and the repository's maintainers can see the report.
 
 If private reporting is not available to you for some reason, open a regular issue that says
 only that you have a security report to make, without details, and ask for another way to
