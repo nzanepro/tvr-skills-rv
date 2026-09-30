@@ -478,3 +478,19 @@ def test_unsubstituted_plugin_option_is_not_a_path(tmp_path, rvfind):
     bin_dir, source, _ = rvfind.find_rv("rvio", rv_bin=placeholder,
                                         **where(tmp_path, platform="linux", which=which_in(path_dir)))
     assert (bin_dir, source) == (path_dir, "PATH")
+
+
+def test_config_file_with_a_byte_order_mark_is_read(tmp_path, rvfind):
+    """PowerShell 5.1's Set-Content -Encoding utf8 writes a byte-order mark first."""
+    path = rvfind.config_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"\xef\xbb\xbf" + b'{"rv_bin": "/opt/rv/bin"}')
+    assert rvfind.load_config(tmp_path) == {"rv_bin": "/opt/rv/bin"}
+
+
+def test_rv_bin_flag_expands_a_leading_tilde(tmp_path, rvfind):
+    """A quoted ~ reaches the script unexpanded; --rv-bin treats it like the config file does."""
+    home = tmp_path / "home"
+    make_tool(home / "rv" / "bin", "rvio", "linux")
+    bin_dir, source, _ = rvfind.find_rv("rvio", rv_bin="~/rv", **where(tmp_path, platform="linux"))
+    assert (bin_dir, source) == (home / "rv" / "bin", "--rv-bin")

@@ -462,3 +462,9 @@ def test_help_mentions_chrome_flag_and_headless_shell(script):
     assert r.returncode == 0
     assert "--chrome" in r.stdout and "chrome-headless-shell" in r.stdout
     assert "config.json" in r.stdout
+
+
+def test_browser_settings_expand_a_leading_tilde_in_flags(tmp_path, wc):
+    exe = _exe(tmp_path / "bin" / "chrome")
+    got = wc.browser_settings("~/bin/chrome", "~/pw", config={}, home=tmp_path)
+    assert got == (str(exe), str(tmp_path / "pw"))

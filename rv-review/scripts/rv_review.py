@@ -237,7 +237,7 @@ def iter_candidates(rv_bin=None, config=None, platform=None, home=None, root="/"
     kind = _os_kind(platform)
     which = which or shutil.which
     if rv_bin and str(rv_bin).strip() != UNSET_OPTION:
-        yield "--rv-bin", Path(rv_bin)
+        yield "--rv-bin", Path(local_config.expand_home(rv_bin, home))
     if config is None:
         config = local_config.load_config(home)
     configured = local_config.config_value(config, "rv_bin", home)

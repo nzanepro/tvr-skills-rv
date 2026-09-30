@@ -771,3 +771,18 @@ def test_find_rv_ignores_the_unsubstituted_plugin_option(tmp_path, rr):
     placeholder = "$" + "{user_config.rv_bin}"
     assert rr.find_rv(rv_bin=placeholder, platform=LINUX,
                       **_where(tmp_path, which=_which_in(path_dir))) == winner
+
+
+def test_find_rv_rv_bin_flag_expands_a_leading_tilde(tmp_path, rr):
+    winner = _make_pair(rr, tmp_path / "home" / "rv" / "bin", LINUX)
+    assert rr.find_rv(rv_bin="~/rv/bin", platform=LINUX, **_where(tmp_path)) == winner
+
+
+def test_config_file_with_a_byte_order_mark_is_read(tmp_path):
+    import local_config
+    cfg = local_config.config_path(tmp_path)
+    cfg.parent.mkdir(parents=True)
+    cfg.write_bytes(b"\xef\xbb\xbf" + b'{"chrome": "~/c"}')
+    assert local_config.load_config(tmp_path) == {"chrome": "~/c"}
+    assert local_config.setting(None, "chrome", home=tmp_path) == (str(tmp_path / "c"), "config")
+    assert local_config.setting("~/flag", "chrome", home=tmp_path) == (str(tmp_path / "flag"), "flag")

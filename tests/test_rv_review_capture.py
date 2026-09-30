@@ -1031,3 +1031,10 @@ def test_run_playwright_node_passes_the_project_and_nothing_else(tmp_path, wc, m
     assert wc.run_playwright_node([], {"scale": 1.0}) == (["a.png"], [])
     assert seen["cfg"]["project"] == os.getcwd()
     assert "env" not in seen["kw"]
+
+
+def test_find_adb_flag_expands_a_leading_tilde(tmp_path, ac):
+    exe = _sdk(tmp_path / "home" / "sdk")
+    got = ac.find_adb("~/sdk/platform-tools/" + ADB_NAME, which=lambda n: None,
+                      **_adb_where(tmp_path))
+    assert got == str(exe)

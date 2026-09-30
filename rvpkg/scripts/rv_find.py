@@ -110,7 +110,8 @@ def load_config(home=None):
     if not path.is_file():
         return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        # utf-8-sig: PowerShell 5.1 writes a byte-order mark with -Encoding utf8
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError) as exc:
         raise ConfigError(f"{path} is not valid JSON ({exc}); fix it or delete it") from None
     if not isinstance(data, dict) or not all(isinstance(v, str) for v in data.values()):
@@ -119,14 +120,19 @@ def load_config(home=None):
     return data
 
 
-def config_value(config, key, home=None):
-    """config[key] as a path string, with a leading ~ made the home folder; None if unset."""
-    value = (config or {}).get(key, "").strip()
-    if not value:
-        return None
+def expand_home(value, home=None):
+    """value with a leading ~ (alone, or before / or \\) made the home folder. Used for the
+    config file's values and for --rv-bin alike, since a quoted ~ reaches the script as is."""
+    value = str(value).strip()
     if value == "~" or value.startswith(("~/", "~\\")):
         return str((Path.home() if home is None else Path(home)) / value[2:])
     return value
+
+
+def config_value(config, key, home=None):
+    """config[key] as a path string, with a leading ~ made the home folder; None if unset."""
+    value = (config or {}).get(key, "").strip()
+    return expand_home(value, home) if value else None
 
 
 # --- Windows folders ----------------------------------------------------------------------
@@ -277,7 +283,7 @@ def iter_candidates(rv_bin=None, config=None, platform=None, home=None, root="/"
     kind = os_kind(platform)
     which = which or shutil.which
     if rv_bin and rv_bin.strip() != UNSET_OPTION:
-        yield "--rv-bin", bin_dirs_for(rv_bin, platform)
+        yield "--rv-bin", bin_dirs_for(expand_home(rv_bin, home), platform)
     if config is None:
         config = load_config(home)
     configured = config_value(config, "rv_bin", home)

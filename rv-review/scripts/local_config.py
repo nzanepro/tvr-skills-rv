@@ -60,7 +60,8 @@ def load_config(home=None):
     if not path.is_file():
         return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        # utf-8-sig: PowerShell 5.1 writes a byte-order mark with -Encoding utf8
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError) as exc:
         raise ConfigError(f"{path} is not valid JSON ({exc}); fix it or delete it") from None
     if not isinstance(data, dict) or not all(isinstance(v, str) for v in data.values()):
@@ -69,21 +70,26 @@ def load_config(home=None):
     return data
 
 
-def config_value(config, key, home=None):
-    """config[key] as a path string, with a leading ~ made the home folder; None if unset."""
-    value = (config or {}).get(key, "").strip()
-    if not value:
-        return None
+def expand_home(value, home=None):
+    """value with a leading ~ (alone, or before / or \\) made the home folder. Used for the
+    config file's values and for path flags alike, since a quoted ~ reaches the script as is."""
+    value = str(value).strip()
     if value == "~" or value.startswith(("~/", "~\\")):
         return str(_home(home) / value[2:])
     return value
+
+
+def config_value(config, key, home=None):
+    """config[key] as a path string, with a leading ~ made the home folder; None if unset."""
+    value = (config or {}).get(key, "").strip()
+    return expand_home(value, home) if value else None
 
 
 def setting(flag_value, key, config=None, home=None):
     """(value, source): a command-line flag first, then the config file, else (None, None).
     config: settings dict (default: read the config file; ConfigError when it is broken)."""
     if flag_value:
-        return str(flag_value), "flag"
+        return expand_home(flag_value, home), "flag"
     if config is None:
         config = load_config(home)
     value = config_value(config, key, home)
