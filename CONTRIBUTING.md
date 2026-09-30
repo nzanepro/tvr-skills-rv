@@ -54,7 +54,8 @@ python scripts/check_repo.py
 `claude plugin validate` checks both manifests, but it does not read the `SKILL.md` files of
 skills that `plugin.json` lists outside a `skills/` folder, as this repository's are;
 `check_repo.py` and the tests check their frontmatter. `plugin.json` is the plugin's manifest:
-declare skills there, not in the marketplace entry.
+declare skills there, not in the marketplace entry. CI runs both `claude plugin validate`
+commands with a pinned Claude Code version on every push and pull request.
 
 ## Making a release (maintainers)
 

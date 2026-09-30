@@ -305,9 +305,10 @@ python -m pip install numpy Pillow pytest PyYAML strictyaml
 python -m pytest tests -q
 ```
 
-CI runs the tests on Windows, macOS and Linux. The tests never need RV. Trigger evals
-(prompts that should and should not load the skill, focused on near misses) are in
-[`evals/trigger-queries.json`](evals/trigger-queries.json) in the skill-creator format.
+CI runs the tests on Windows, macOS and Linux, and `claude plugin validate . --strict` on
+Linux. The tests never need RV. Trigger evals (prompts that should and should not load the
+skill, focused on near misses) are in [`evals/trigger-queries.json`](evals/trigger-queries.json)
+in the skill-creator format.
 Before a release, run `claude plugin validate . --strict` (it checks
 `.claude-plugin/marketplace.json` and the plugin's `.claude-plugin/plugin.json`) and
 `python scripts/check_repo.py` (skill frontmatter, manifests and privacy), and keep `SKILL.md`
