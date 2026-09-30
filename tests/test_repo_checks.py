@@ -54,6 +54,11 @@ def test_personal_paths_clean_on_real_repo(cr):
     assert problems == [], "\n".join(str(p) for p in problems)
 
 
+def test_readme_listing_clean_on_real_repo(cr):
+    problems = cr.check_readme_listing()
+    assert problems == [], "\n".join(str(p) for p in problems)
+
+
 def test_main_exits_zero_on_real_repo(cr, capsys):
     assert cr.main([]) == 0
     out = capsys.readouterr().out
@@ -457,6 +462,57 @@ def test_real_plugin_keeps_its_names_and_skills():
     assert entry["description"] == plugin["description"]
     # plugin.json is the manifest: the entry declares no components and no second version.
     assert not any(key in entry for key in ("skills", "commands", "agents", "hooks", "strict", "version"))
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        'ln -s "$SRC_DIR/rv-review" ~/.claude/skills/rv-review',
+        'cmd /c mklink /J "$env:BASE_DIR\\skills\\rv-review" x',
+        "cp -r ${BASE_DIR}/x ~/.claude/skills/",
+        "echo $(date)",
+        r"copy x %BASE_DIR%\skills",
+    ],
+)
+def test_readme_listing_flags_shell_variables(cr, tmp_path, monkeypatch, line):
+    (tmp_path / "README.md").write_text(f"Install:\n\n```\n{line}\n```\n", encoding="utf-8")
+    monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
+
+    problems = cr.check_readme_listing()
+
+    assert [p.path for p in problems] == ["README.md:4"], problems
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "git clone ../tvr-skills-rv ~/tvr-skills-rv",
+        "ln -s ~/tvr-skills-rv/rv-review ~/.claude/skills/rv-review",
+        "cmd /c mklink /J .claude\\skills\\rv-review tvr-skills-rv\\rv-review",
+        "It costs $5, or 100% of nothing.",
+    ],
+)
+def test_readme_listing_accepts_literal_paths(cr, tmp_path, monkeypatch, line):
+    (tmp_path / "README.md").write_text(f"{line}\n", encoding="utf-8")
+    monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
+
+    assert cr.check_readme_listing() == []
+
+
+def test_readme_listing_flags_image_paths_in_code(cr, tmp_path, monkeypatch):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "demo.png").write_bytes(b"\x89PNG")
+    (tmp_path / "README.md").write_text(
+        "![demo](docs/demo.png) and [the demo](docs/demo.png) are fine.\n"
+        "The demo is `docs/demo.png`.\n"
+        "```\nopen docs/demo.png\n```\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
+
+    problems = cr.check_readme_listing()
+
+    assert [p.path for p in problems] == ["README.md:2", "README.md:4"], problems
 
 
 @pytest.mark.parametrize(

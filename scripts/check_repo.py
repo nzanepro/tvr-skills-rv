@@ -27,6 +27,12 @@ Checks:
    to the author's unrelated private projects that must never leak into this public
    repo. This is a lightweight net, not a guarantee -- it catches copy-paste
    mistakes, not determined secret-hiding.
+5. README.md, which the plugin directory shows as the listing, has no shell variable
+   ($NAME, ${NAME}, $env:NAME, %NAME%) or command substitution ($(...)): the
+   directory's scanner reads a variable beside a remote URL as a local value, possibly a
+   credential, sent off the machine (MCP_FORWARDS_CREDENTIAL_ENV). And no Markdown file
+   writes the path of an image in the repository in backticks or a code block, which the
+   directory holds for a reviewer; link to it or show it with Markdown image syntax.
 
 Exit status is 0 when every check passes, 1 otherwise. Nothing here touches git,
 the network, or RV/OpenRV.
@@ -526,11 +532,54 @@ def check_personal_paths() -> list[Problem]:
     return problems
 
 
+# A shell variable or command substitution in any syntax a README reader might paste: POSIX
+# $NAME, ${NAME} and $(...), PowerShell $env:NAME and cmd.exe %NAME%.
+SHELL_VARIABLE_PATTERN = re.compile(r"\$(?:[A-Za-z_][A-Za-z0-9_]*|\{|\()|%[A-Za-z_][A-Za-z0-9_()]*%")
+IMAGE_EXTS = {".png", ".gif", ".jpg", ".jpeg", ".webp", ".svg"}
+CODE_SPAN = re.compile(r"`([^`\n]+)`")
+
+
+def check_readme_listing() -> list[Problem]:
+    problems: list[Problem] = []
+    readme = REPO_ROOT / "README.md"
+    if readme.is_file():
+        for lineno, line in enumerate(readme.read_text(encoding="utf-8").splitlines(), start=1):
+            m = SHELL_VARIABLE_PATTERN.search(line)
+            if m:
+                problems.append(
+                    Problem("readme-listing", f"README.md:{lineno}",
+                            f"shell variable or substitution {m.group(0)!r}; write a literal or ~-based path")
+                )
+
+    files = list(iter_repo_files())
+    images = {rel.as_posix() for rel in files if rel.suffix.lower() in IMAGE_EXTS}
+    if not images:
+        return problems
+    for rel in files:
+        if rel.suffix.lower() != ".md":
+            continue
+        in_block = False
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            if line.lstrip().startswith("```"):
+                in_block = not in_block
+                continue
+            spans = [line] if in_block else CODE_SPAN.findall(line)
+            for image in images:
+                if any(image in span for span in spans):
+                    problems.append(
+                        Problem("readme-listing", f"{rel.as_posix()}:{lineno}",
+                                f"image path {image!r} in backticks or a code block; link to it instead")
+                    )
+    return problems
+
+
 CHECKS = {
     "skill-frontmatter": check_skill_frontmatter,
     "marketplace-skills": check_marketplace_skills_paths,
     "versions": check_versions,
     "personal-paths": check_personal_paths,
+    "readme-listing": check_readme_listing,
 }
 
 
