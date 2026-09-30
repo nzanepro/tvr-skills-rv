@@ -2,50 +2,47 @@
 
 Read this when RV has to be driven from a script rather than clicked: starting `rv` with
 flags, sending commands to a running RV with `rvpush`, rvlink URLs, running Mu or Python
-outside RV, the environment variables RV reads, or when you meet an unfamiliar executable in
+outside RV, the variables RV reads at start-up, or when you meet an unfamiliar executable in
 the RV bin folder. Converting media is the `rvio` skill; listing sequences is `rvls`;
-packages are `rvpkg`.
-
-Sources: the OpenRV source (`src/lib/app/RvApp/RvApp/Options.h`, `src/bin/apps/rv/main.cpp`,
-`src/bin/apps/rvpush/RvPusher.cpp`) and the OpenRV manuals at aswf-openrv.readthedocs.io
-(RV User Manual chapters 3, 10, 13, 18, C and K; Reference Manual chapter 15). Items marked
-*verified* were run against OpenRV 3.1; the rest come from the docs and source. `rv` opens a
-window every time, so do not start it just to read its help.
+packages are `rvpkg`. Items marked *verified* were run against OpenRV 3.1; the rest come from
+the docs and source ([Sources](#sources)). `rv` opens a window every time, so do not start it
+just to read its help.
 
 ## rv flags for scripted sessions
 
 | Need | Flags |
 |---|---|
+| Networking | `-network`, `-networkPort N` (default 45124), `-networkHost H`, `-networkTag T`, `-networkConnect HOST [PORT]`, `-networkUser NAME`, `-networkPerm 0/1/2` |
+| Links | `-encodeURL ARGS` prints the rest of the command line as an rvlink and exits; `-bakeURL` prints the hex ("baked") form ([rvlink URLs](#rvlink-urls)) |
+| Reuse a window | `-reuse 1` (default) sends the media to the running RV; `-reuse 0` always opens a new one |
 | Clean start, no user prefs | `-noPrefs` (ignore prefs), `-resetPrefs`, `-prefsPath DIR`, `-nopackages` (skip all packages) |
-| Run code at session start | `-eval 'MU'`, `-pyeval 'PYTHON'` (run in every new session), `-flags name=value ...` (read by scripts), `-init FILE.mu` |
 | Caching | `-l` look-ahead cache, `-c` region cache, `-nc` no cache, `-lram GB`, `-cram GB`, `-vram MB` |
 | Playback | `-play`, `-playMode 0/1`, `-loopMode 0/1/2`, `-fps F`, `-fullscreen`, `-present`, `-screen N`, `-geometry X Y W H` |
 | Layout | `-over`, `-diff`, `-wipe`, `-tile`, `-replace`, `-layer`, `-topmost`, `-comp MODE`, `-layout MODE`, `-stereo MODE`, `-view NODE`, `-bg COLOUR` |
-| Networking | `-network`, `-networkPort N` (default 45124), `-networkHost H`, `-networkTag T`, `-networkConnect HOST [PORT]`, `-networkUser NAME`, `-networkPerm 0/1/2` |
-| Reuse a window | `-reuse 1` (default) sends the media to the running RV; `-reuse 0` always opens a new one |
-| URLs | `-encodeURL ARGS` prints an `rvlink://` URL for the rest of the command line and exits; `-bakeURL` prints the hex ("baked") form |
 | Events | `-sendEvent NAME CONTENT` sends a user event to the session after start |
 | Sequences | `-ns` is accepted but ignored (Nuke-style `####` notation always works) |
+| Run code at session start | `-eval 'MU'`, `-pyeval 'PYTHON'` (run in every new session), `-flags name=value ...` (read by scripts), `-init FILE.mu` |
 
 Media arguments follow the same rules as rvio: sequences as `name.#.exr`, `name.@@@@.exr`,
 `name.%04d.exr` or `name.1001-1100#.exr`, and per-source options inside `[ ... ]` with a
 space on each side of each bracket, for example `[ left.#.exr right.#.exr ]` for a stereo
 pair or `[ -in 1010 -out 1050 plate.mov ]`.
 
-Init scripts are looked up in this order: `-init`, the `RV_INIT` environment variable,
+Init scripts are looked up in this order: `-init`, the `RV_INIT` variable,
 `~/.rvrc.mu`, then `<install>/scripts/rv/rvrc.mu` (and the matching `rvrc.py`).
 
 ## rvpush: talk to a running RV
 
 `rvpush` finds an RV that was started with networking on, by reading the port files RV writes
-to `<system temp>/tweak_rv_proc/<pid>[_<tag>]`. If none answers, it starts `rv -network`
-from its own bin folder (or `RVPUSH_RV_EXECUTABLE_PATH`; set that to `none` to never start
-one). *verified: help text and exit codes below.*
+to `<system temp>/tweak_rv_proc/<pid>[_<tag>]`. If none answers, it starts a new RV itself:
+the `rv` in its own bin folder, or the one the `RVPUSH_RV_EXECUTABLE_PATH` variable names,
+unless that variable is `none`. *verified: help text and exit codes below.*
 
-Run every command below with `RVPUSH_RV_EXECUTABLE_PATH=none` set (bash:
-`RVPUSH_RV_EXECUTABLE_PATH=none rvpush ...`; PowerShell:
-`Set-Item Env:RVPUSH_RV_EXECUTABLE_PATH none` once), or a plain rvpush starts a new RV
-whenever none answers the tag.
+In this skill, send rvpush commands through `python scripts/rv_review.py [--tag T] --push
+COMMAND ARG ...` (see `rv-commands.md`): it runs rvpush only while an RV with the tag is
+alive, and on macOS and Linux also under `/usr/bin/env RVPUSH_RV_EXECUTABLE_PATH=none`, so no
+stray RV is started. On Windows the live-RV check is the only guard, and rvpush can still
+start an RV if the tagged one quits in the moment between the check and the push.
 
 ```text
 rvpush [-tag T] set   <media args>        replace the session's media
@@ -57,8 +54,6 @@ rvpush [-tag T] py-eval-return 'rv.commands.frame()'
 rvpush [-tag T] py-exec 'from rv import commands; commands.play()'
 ```
 
-- `rvpush [-tag T] url LINK` hands an rvlink (see [rvlink URLs](#rvlink-urls)) to the
-  running RV.
 - `-tag T` addresses the RV started with `-networkTag T`, so a script can own one window and
   leave the user's other RV sessions alone.
 - Exit status: 0 done; 4 connection to the running RV failed; 11 could not connect and could
@@ -68,20 +63,11 @@ rvpush [-tag T] py-exec 'from rv import commands; commands.play()'
 - Networking has to be allowed: start RV with `-network` (optionally `-networkPort`), or turn
   networking on in RV's preferences.
 
-## rvlink URLs
-
-An rvlink is an rv command line written as a link, so a review can be shared in a message:
-the `rvlink://` scheme, a space, then the flags and media paths, such as
-`-l -play /path/shot.mov`. Opening the link gives those arguments to RV. Arguments with
-spaces go in single quotes inside the link. `rv -encodeURL ...` builds one; the `baked/<hex>`
-form after the scheme is the encoded one. The OS only passes rvlinks to RV after the
-protocol handler is registered (RV's `.reg` / `.bat` files on Windows; the app bundle on
-macOS; a desktop file on Linux).
-
 ## Running Mu and Python outside RV
 
 - `mu-interp FILE.mu` runs a Mu file; `mu-interp` alone is a REPL. `-main` calls `main()`,
-  `-stdin` takes the program on standard input without a prompt, `-compile` compiles `.muc` files on demand.
+  `-stdin` takes the program on standard input without a prompt, `-compile` compiles `.muc`
+  files on demand.
   *verified:* `mu-interp t.mu` with `print("mu %d\n" % (2+3));` printed `mu 5`.
 - `py-interp` is RV's bundled Python (3.11 in OpenRV 3.1) as a standalone interpreter:
   `py-interp script.py`, `py-interp -c "..."`. The `rv` module is only usable inside a running
@@ -96,6 +82,7 @@ macOS; a desktop file on Linux).
 | `rvio` / `rvio_sw` | movie and image conversion (see the rvio skill); `rvio_sw` is a software-rendering build that only Linux installs have; Autodesk RV calls its GPU build `rvio_hw` | yes |
 | `rvls` | list sequences and read headers (rvls skill) | yes |
 | `rvpkg` | manage packages (rvpkg skill) | yes |
+| RV's embedded Python (`python`, `pythonw`, Windows installs) | the runtime RV itself uses; prefer `py-interp` | rarely |
 | `gtoinfo FILE` | print the structure of a GTO file, which is what `.rv` session files are: `-a` everything, `-d` data only, `-h` header (default), `-f EXPR` filter. *verified on a `.rv` written by `rvio ... -o session.rv`* | yes |
 | `gtofilter -o OUT IN` | copy a GTO / `.rv` file keeping (`-ie REGEX`) or dropping (`-ee REGEX`) properties; `-t` writes text | yes |
 | `gtomerge -o OUT IN1 IN2 ...` | merge GTO property data; `-sp PREFIX` strips a prefix | yes |
@@ -105,14 +92,16 @@ macOS; a desktop file on Linux).
 | `ojph_compress`, `ojph_expand` | OpenJPH command-line encoder / decoder for High-Throughput JPEG 2000 (HTJ2K), shipped next to RV's HTJ2K reader | yes |
 | `rvprof FILE.rvprof` | GUI viewer for playback profiles written by `rv -debug profile` | no: opens a window |
 | `rvshell NAME HOST [PORT]` | sample network client with a window, a demo of RV's remote-control protocol | no: opens a window |
-| `python`, `pythonw` | the Python runtime RV embeds (on Windows); prefer `py-interp` | rarely |
 | `QtWebEngineProcess` | helper process for RV's web views | never run directly |
 
-## Environment variables
+## Variables RV reads
+
+RV and its tools read these from the shell or system settings they start with; this skill's
+scripts read none of them.
 
 | Variable | Effect |
 |---|---|
-| `RV_SUPPORT_PATH` | support areas, `;`-separated on Windows and `:` elsewhere; replaces the default user area (`%APPDATA%\RV`, `~/Library/Application Support/RV`, `~/.rv`), while the install's own plugin area is still added. Include the user area yourself when you set it. |
+| `RV_SUPPORT_PATH` | support areas, `;`-separated on Windows and `:` elsewhere; replaces the default user area (`~\AppData\Roaming\RV` on Windows, `~/Library/Application Support/RV`, `~/.rv`), while the install's own plugin area is still added. Include the user area yourself when you set it. |
 | `RV_PREFS_OVERRIDE_PATH`, `RV_PREFS_CLOBBER_PATH` | folders with initial (override) or forced (clobber) preference files, for studio-wide defaults |
 | `RV_INIT`, `RVIO_INIT` | init script for rv / rvio instead of `~/.rvrc.mu` / `~/.rviorc.mu` |
 | `RVIO_OUTPARAMS` | default `-outparams` values for every rvio run (space-separated) |
@@ -123,7 +112,7 @@ macOS; a desktop file on Linux).
 | `RV_OS_PATH_<OS>[_TAG]`, `RV_PATHSWAP_<NAME>` | path remapping between operating systems for sessions shared across machines (with the "OS Dependent Path Conversion" package) |
 | `RV_IOEXR_ARGS`, `RV_IODPX_ARGS`, `RV_IOTIFF_ARGS`, `RV_IOJPEG_ARGS`, `RV_MOVIEFFMPEG_ARGS` ... | default reader options (for example `--codecThreads N` for FFmpeg) |
 
-Log files: `%APPDATA%\ASWF\OpenRV\OpenRV.log` on Windows, `~/Library/Logs/ASWF/OpenRV.log`
+Log files: `~\AppData\Roaming\ASWF\OpenRV\OpenRV.log` on Windows, `~/Library/Logs/ASWF/OpenRV.log`
 on macOS, `~/.local/share/ASWF/OpenRV/OpenRV.log` on Linux (OpenRV 3.x; Autodesk RV uses its
 own folders).
 
@@ -135,3 +124,21 @@ own folders).
   a build turns individual FFmpeg encoders back on.
 - Autodesk RV's GPU converter is `rvio_hw` and its `rvio` is software-only (Linux); in
   OpenRV `rvio` is the GPU build and `rvio_sw` the Linux software build.
+
+## rvlink URLs
+
+An rvlink is an rv command line written as a link, so a review can be shared in a message:
+the `rvlink://` scheme, a space, then the flags and media paths, such as
+`-l -play /path/shot.mov`. Opening the link gives those arguments to RV. Arguments with
+spaces go in single quotes inside the link. `rv -encodeURL ...` builds one; the `baked/<hex>`
+form after the scheme is the encoded one. The OS only passes rvlinks to RV after the
+protocol handler is registered (RV's `.reg` / `.bat` files on Windows; the app bundle on
+macOS; a desktop file on Linux). rvpush's `url` command hands a link to an RV that is
+already running.
+
+## Sources
+
+The OpenRV source (`src/lib/app/RvApp/RvApp/Options.h`, `src/bin/apps/rv/main.cpp`,
+`src/bin/apps/rvpush/RvPusher.cpp`) and the OpenRV manuals, RV User Manual chapters 3, 10,
+13, 18, C and K and Reference Manual chapter 15:
+<https://aswf-openrv.readthedocs.io/>.
