@@ -55,9 +55,10 @@ rvpush [-tag T] mu-eval-return 'frame()'  run Mu and print the result
 rvpush [-tag T] py-eval 'rv.commands.play()'
 rvpush [-tag T] py-eval-return 'rv.commands.frame()'
 rvpush [-tag T] py-exec 'from rv import commands; commands.play()'
-rvpush [-tag T] url 'rvlink:// -reuse 0 shot.mov'
 ```
 
+- `rvpush [-tag T] url LINK` hands an rvlink (see [rvlink URLs](#rvlink-urls)) to the
+  running RV.
 - `-tag T` addresses the RV started with `-networkTag T`, so a script can own one window and
   leave the user's other RV sessions alone.
 - Exit status: 0 done; 4 connection to the running RV failed; 11 could not connect and could
@@ -69,16 +70,18 @@ rvpush [-tag T] url 'rvlink:// -reuse 0 shot.mov'
 
 ## rvlink URLs
 
-`rvlink://<rv command line>` runs RV with those arguments when the URL is opened, for example
-`rvlink:// -l -play /path/shot.mov`. Arguments with spaces go in single quotes inside the
-URL. `rv -encodeURL ...` builds one; `rvlink://baked/<hex>` is the encoded form. The OS only
-passes rvlink URLs to RV after the protocol handler is registered (RV's `.reg` / `.bat` files
-on Windows; the app bundle on macOS; a desktop file on Linux).
+An rvlink is an rv command line written as a link, so a review can be shared in a message:
+the `rvlink://` scheme, a space, then the flags and media paths, such as
+`-l -play /path/shot.mov`. Opening the link gives those arguments to RV. Arguments with
+spaces go in single quotes inside the link. `rv -encodeURL ...` builds one; the `baked/<hex>`
+form after the scheme is the encoded one. The OS only passes rvlinks to RV after the
+protocol handler is registered (RV's `.reg` / `.bat` files on Windows; the app bundle on
+macOS; a desktop file on Linux).
 
 ## Running Mu and Python outside RV
 
 - `mu-interp FILE.mu` runs a Mu file; `mu-interp` alone is a REPL. `-main` calls `main()`,
-  `-stdin` reads code from stdin non-interactively, `-compile` compiles `.muc` files on demand.
+  `-stdin` takes the program on standard input without a prompt, `-compile` compiles `.muc` files on demand.
   *verified:* `mu-interp t.mu` with `print("mu %d\n" % (2+3));` printed `mu 5`.
 - `py-interp` is RV's bundled Python (3.11 in OpenRV 3.1) as a standalone interpreter:
   `py-interp script.py`, `py-interp -c "..."`. The `rv` module is only usable inside a running
