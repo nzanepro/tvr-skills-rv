@@ -362,6 +362,62 @@ def test_marketplace_skills_paths_flags_plugin_name_mismatch(cr, tmp_path, monke
     assert any("does not match the marketplace entry" in p.detail for p in problems)
 
 
+def _write_versioned_repo(tmp_path, plugin_version="1.2.3", top_level="1.2.3", entry_version=None,
+                          changelog_version="1.2.3", link=True, skill_version="1.0.0"):
+    entry = {"name": "example", "source": "./"}
+    if entry_version is not None:
+        entry["version"] = entry_version
+    _write_plugin_repo(tmp_path, entry, {"name": "example", "version": plugin_version,
+                                         "skills": ["./example-skill"]})
+    marketplace_path = tmp_path / ".claude-plugin" / "marketplace.json"
+    marketplace = json.loads(marketplace_path.read_text(encoding="utf-8"))
+    marketplace["version"] = top_level
+    marketplace_path.write_text(json.dumps(marketplace), encoding="utf-8")
+    (tmp_path / "example-skill" / "SKILL.md").write_text(
+        f"---\nname: example-skill\nmetadata:\n  version: {skill_version}\n---\n", encoding="utf-8"
+    )
+    changelog = (
+        "# Changelog\n\n## [Unreleased]\n\n"
+        f"## [{changelog_version}] - 2026-01-02\n\n- A change.\n\n"
+        "## [1.0.0] - 2026-01-01\n\n- First.\n\n"
+    )
+    if link:
+        changelog += f"[{changelog_version}]: https://example.invalid/releases/tag/v{changelog_version}\n"
+    (tmp_path / "CHANGELOG.md").write_text(changelog, encoding="utf-8")
+
+
+def test_versions_pass_when_everything_agrees(cr, tmp_path, monkeypatch):
+    _write_versioned_repo(tmp_path)
+    monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
+
+    assert cr.check_versions() == []
+
+
+@pytest.mark.parametrize(
+    "kwargs,expected",
+    [
+        ({"top_level": "1.2.2"}, "top-level version '1.2.2'"),
+        ({"entry_version": "1.2.3"}, "entry sets a version"),
+        ({"changelog_version": "1.2.2"}, "newest release heading is '1.2.2'"),
+        ({"link": False}, "no '[1.2.3]: <url>' link reference"),
+        ({"skill_version": "1.3.0"}, "ahead of the plugin version"),
+        ({"plugin_version": "1.2"}, "not x.y.z"),
+    ],
+)
+def test_versions_flag_each_disagreement(cr, tmp_path, monkeypatch, kwargs, expected):
+    _write_versioned_repo(tmp_path, **kwargs)
+    monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
+
+    problems = cr.check_versions()
+
+    assert any(expected in p.detail for p in problems), [str(p) for p in problems]
+
+
+def test_versions_clean_on_real_repo(cr):
+    problems = cr.check_versions()
+    assert problems == [], "\n".join(str(p) for p in problems)
+
+
 def test_real_plugin_keeps_its_names_and_skills():
     """Users install `rv@tvr-skills-rv` and run `/rv:<skill>`, and release zips and tests use
     the skill folders at the repository root, so none of these may change by accident."""

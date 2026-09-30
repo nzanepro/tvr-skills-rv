@@ -2,8 +2,12 @@
 
 All notable changes to this project are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
-[Semantic Versioning](https://semver.org/). The version matches `metadata.version` in each
-skill's `SKILL.md` and the marketplace entry.
+[Semantic Versioning](https://semver.org/). A release is numbered by the plugin version,
+`version` in `.claude-plugin/plugin.json` (the top-level `version` in
+`.claude-plugin/marketplace.json` matches it), and tagged `vX.Y.Z`. Each skill also has its
+own version, `metadata.version` in its `SKILL.md`, which changes only when that skill changes,
+so a skill's version can be lower than the plugin's; each release's "Versions" line lists the
+skill versions it changed.
 
 ## [0.2.2] - 2026-09-26
 

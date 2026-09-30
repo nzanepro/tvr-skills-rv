@@ -18,7 +18,10 @@ Checks:
    manifest agree on the plugin's name, and the two are not declared in a way Claude
    Code rejects as "conflicting manifests" (a "strict": false entry that also lists
    components next to a plugin.json).
-3. No tracked, non-binary file contains a personal file path, this project's own
+3. The plugin version in .claude-plugin/plugin.json matches the marketplace file's
+   top-level version and the newest CHANGELOG.md release, the marketplace entry does
+   not repeat it, and no skill's metadata.version is ahead of it.
+4. No tracked, non-binary file contains a personal file path, this project's own
    development machine/user names, an email address, or a small list of words tied
    to the author's unrelated private projects that must never leak into this public
    repo. This is a lightweight net, not a guarantee -- it catches copy-paste
@@ -420,6 +423,66 @@ def _check_skill_refs(rel: str, plugin_name: str, plugin_root: Path, skills: lis
     return problems
 
 
+SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+CHANGELOG_RELEASE_HEADING = re.compile(r"^## \[(\d+\.\d+\.\d+)\] - \d{4}-\d{2}-\d{2}\s*$", re.MULTILINE)
+
+
+def check_versions() -> list[Problem]:
+    """The plugin version lives in .claude-plugin/plugin.json. The marketplace file's top-level
+    version and the newest CHANGELOG.md release (with its link reference) must match it, the
+    marketplace entry must not carry a second copy (Claude Code uses plugin.json's and
+    `claude plugin validate` warns on a mismatch), and no skill's metadata.version may be
+    ahead of it.
+    """
+    problems: list[Problem] = []
+    plugin_rel = ".claude-plugin/plugin.json"
+    marketplace_rel = ".claude-plugin/marketplace.json"
+    try:
+        plugin = json.loads((REPO_ROOT / plugin_rel).read_text(encoding="utf-8"))
+        marketplace = json.loads((REPO_ROOT / marketplace_rel).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [Problem("versions", ".claude-plugin", f"cannot read the manifests: {exc}")]
+
+    version = plugin.get("version")
+    if not isinstance(version, str) or not SEMVER.match(version):
+        return [Problem("versions", plugin_rel, f"version {version!r} is missing or not x.y.z")]
+
+    top_level = marketplace.get("version", (marketplace.get("metadata") or {}).get("version"))
+    if top_level is not None and top_level != version:
+        problems.append(Problem("versions", marketplace_rel,
+                                f"top-level version '{top_level}' does not match {plugin_rel} '{version}'"))
+    for entry in marketplace.get("plugins", []):
+        if entry.get("name") == plugin.get("name") and "version" in entry:
+            problems.append(Problem("versions", marketplace_rel,
+                                    f"plugin '{entry.get('name')}' entry sets a version; keep it in {plugin_rel} only"))
+
+    changelog_path = REPO_ROOT / "CHANGELOG.md"
+    if not changelog_path.is_file():
+        problems.append(Problem("versions", "CHANGELOG.md", "file does not exist"))
+    else:
+        changelog = changelog_path.read_text(encoding="utf-8")
+        releases = CHANGELOG_RELEASE_HEADING.findall(changelog)
+        if not releases or releases[0] != version:
+            newest = releases[0] if releases else "none"
+            problems.append(Problem("versions", "CHANGELOG.md",
+                                    f"newest release heading is '{newest}', expected '## [{version}] - YYYY-MM-DD'"))
+        if not re.search(r"^\[" + re.escape(version) + r"\]: https://\S+$", changelog, re.MULTILINE):
+            problems.append(Problem("versions", "CHANGELOG.md", f"no '[{version}]: <url>' link reference"))
+
+    plugin_key = tuple(int(part) for part in SEMVER.match(version).groups())
+    for skill_md in sorted(REPO_ROOT.glob("*/SKILL.md")):
+        try:
+            metadata = parse_skill_frontmatter(skill_md.read_text(encoding="utf-8")).get("metadata")
+        except ValueError:
+            continue  # check_skill_frontmatter() reports it
+        skill_version = metadata.get("version") if isinstance(metadata, dict) else None
+        match = SEMVER.match(skill_version or "")
+        if match and tuple(int(part) for part in match.groups()) > plugin_key:
+            problems.append(Problem("versions", skill_md.relative_to(REPO_ROOT).as_posix(),
+                                    f"metadata.version '{skill_version}' is ahead of the plugin version '{version}'"))
+    return problems
+
+
 def check_personal_paths() -> list[Problem]:
     word_pattern = private_word_pattern()
     problems: list[Problem] = []
@@ -456,6 +519,7 @@ def check_personal_paths() -> list[Problem]:
 CHECKS = {
     "skill-frontmatter": check_skill_frontmatter,
     "marketplace-skills": check_marketplace_skills_paths,
+    "versions": check_versions,
     "personal-paths": check_personal_paths,
 }
 

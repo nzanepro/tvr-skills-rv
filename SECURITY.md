@@ -34,8 +34,8 @@ reach the maintainer.
 
 Please include:
 
-- The affected script(s) or skill(s) and version (`metadata.version` in the relevant
-  `SKILL.md`, or a commit hash).
+- The affected script(s) or skill(s) and version (the plugin version shown in `/plugin`,
+  `metadata.version` in the relevant `SKILL.md`, or a commit hash).
 - Steps to reproduce, with synthetic inputs rather than anything from a real project.
 - What you expected to happen and what happened instead.
 
