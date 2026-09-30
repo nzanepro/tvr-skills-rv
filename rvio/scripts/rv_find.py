@@ -4,7 +4,7 @@
 Looks for one RV bin folder and reports the tools in it: rv, rvio, rvls, rvpkg, rvpush, plus
 rvio_hw (Autodesk RV), rvio_sw (Linux OpenRV), mu-interp and py-interp when present.
 Standard library only; works on Windows, macOS and Linux. This file is identical in every
-tvr-skills-rv command-line skill. It reads no environment variables: RV is found from the
+tvr-skills-rv command-line skill. It reads no shell variables: RV is found from the
 command line, a config file, PATH and the usual install folders.
 
 Search order (first folder that holds the wanted tool wins):

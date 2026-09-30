@@ -94,6 +94,6 @@ out/shot.mov:
 
 ## Reader options
 
-rvls accepts no reader flags of its own; RV's reader environment variables apply, for example
+rvls accepts no reader flags of its own; RV's reader variables apply, for example
 `RV_MOVIEFFMPEG_ARGS="--codecThreads 4"` or `RV_IOEXR_ARGS`. `-b` helps with files that have
 an unusual or missing extension.

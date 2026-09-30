@@ -131,7 +131,7 @@ Schema `rv-review.result`, `schema_version` 1. Load example (shortened):
   results.
 - `log`: where those lines were read: the file the launcher sends RV's output to
   (`<temp>/rv-review-<tag>.log`), or for windows started another way RV's own log
-  (Windows `%APPDATA%\ASWF\OpenRV\OpenRV.log`, macOS `~/Library/Logs/ASWF/OpenRV.log`, Linux
+  (Windows `~\AppData\Roaming\ASWF\OpenRV\OpenRV.log`, macOS `~/Library/Logs/ASWF/OpenRV.log`, Linux
   `~/.local/share/ASWF/OpenRV/OpenRV.log`; OpenRV `src/lib/base/TwkUtil/FileLogger.cpp`),
   which every OpenRV window shares.
 - Errors: `{"schema": ..., "ok": false, "exit_code": 1, "action": "error", "error": "..."}`.

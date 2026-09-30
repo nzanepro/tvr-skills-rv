@@ -18,7 +18,7 @@ second), otherwise the media's own rate; marks at the first frame of every view 
 frames.json, or at the first frame of every source when at least one source has more than
 one frame; stereo off.
 
-Finding RV (first match wins; rvpush must sit next to rv). No environment variable is read:
+Finding RV (first match wins; rvpush must sit next to rv). No shell variable is read:
   1. --rv-bin DIR
   2. "rv_bin" in ~/.config/tvr-skills-rv/config.json (a leading ~ is the home folder)
   3. rv (rv.exe; RV on macOS) on PATH
@@ -652,8 +652,8 @@ RVPUSH_NO_LAUNCH = "RVPUSH_RV_EXECUTABLE_PATH=none"
 def rvpush_args(rvpush, tag, *args, platform=None, env_program=ENV_PROGRAM):
     """rvpush's command line. On macOS and Linux it runs under /usr/bin/env with
     RVPUSH_RV_EXECUTABLE_PATH=none, so rvpush can never start an RV of its own (one tied to
-    this process, with the pushed code as its start-up script); the rest of the environment is
-    inherited as usual. Windows has no such program: there the live-RV guard in _rvpush is
+    this process, with the pushed code as its start-up script); everything else rvpush
+    inherits as usual. Windows has no such program: there the live-RV guard in _rvpush is
     the only protection."""
     cmd = [str(rvpush), "-tag", tag, *args]
     if _os_kind(platform) != "windows" and Path(env_program).is_file():

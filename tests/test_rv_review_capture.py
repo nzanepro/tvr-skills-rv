@@ -1015,7 +1015,7 @@ def test_node_scripts_load_playwright_from_the_project_folder(wc, ac):
     assert "createRequire" in ac.ELECTRON_JS and "cfg.cwd" in ac.ELECTRON_JS
 
 
-def test_run_playwright_node_passes_the_project_and_no_environment(tmp_path, wc, monkeypatch):
+def test_run_playwright_node_passes_the_project_and_nothing_else(tmp_path, wc, monkeypatch):
     seen = {}
 
     class Done:

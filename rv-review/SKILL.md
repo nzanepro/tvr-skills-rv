@@ -36,12 +36,13 @@ box. Every script prints one JSON line.
 | `scripts/rasterize.py SVG ... --out DIR` | SVG to PNG with the first renderer found (RV cannot read SVG) |
 | `scripts/web_capture.py PAGE ... --out DIR` | web pages or local HTML at named breakpoints (Playwright, else Chrome / Edge) |
 | `scripts/app_capture.py ios\|android\|electron` | the current app screen in several appearances, text sizes, display sizes |
-| `scripts/rv_review.py` | loads sources, a `--manifest` / `--frames-json`, or a `.rv` into the review window (tag `rv-review`), sets layout, stereo, views and marks, reads the state and RV's log back; `--selftest` checks the frame keys. Exit 0 verified, 1 error, 2 bad arguments, 3 loaded but differs, a source did not decode or RV logged errors |
+| `scripts/rv_review.py` | loads sources, a `--manifest` / `--frames-json`, or a `.rv` into the review window (tag `rv-review`), sets layout, stereo, views and marks, reads the state and RV's log back; `--selftest` checks the frame keys; `--push COMMAND ...` sends one rvpush command to a running window. Exit 0 verified, 1 error, 2 bad arguments, 3 loaded but differs, a source did not decode or RV logged errors |
 | `scripts/rv_session.py write\|check\|render` | writes, checks (gtoinfo) and renders (rvio) `.rv` sessions |
 
-RV is found through `--rv-bin`, `RV_BIN`, `RVPUSH_RV_EXECUTABLE_PATH`, `RV_PATH`, `RV_APP_RV`,
-`RV_HOME`, `PATH`, the Windows registry, then the usual install folders; rvpush must sit next
-to rv. If nothing is found, ask for the folder and pass `--rv-bin`.
+RV is found through `--rv-bin`, `rv_bin` in `~/.config/tvr-skills-rv/config.json`, `PATH`, the
+Windows registry, the usual install folders, then an OpenRV built from source (`~/OpenRV`, or
+the checkout you are in); rvpush must sit next to rv. No shell variable is read. If nothing is
+found, ask for the folder and pass `--rv-bin`.
 
 ## Steps
 
@@ -120,11 +121,13 @@ Then the keys:
   load; failures still load (so the rest can be reviewed) but are listed in `errors`, exit 3.
   `--no-decode-check` skips it.
 - **rvpush needs the tag and must never start RV.** RV runs with `-network -networkTag <tag>`
-  and every push uses `-tag <tag>` first; with `RVPUSH_RV_EXECUTABLE_PATH=none` rvpush exits 11
-  when no RV has the tag. The script launches RV detached and sends its output to
-  `<temp>/rv-review-<tag>.log`.
-- **rvpush finds RV through port files in the temp folder**, so caller and RV must share
-  TEMP / TMPDIR. A sandboxed shell with its own temp folder cannot reach the window.
+  and every push uses `-tag <tag>` first. Send single commands with `python
+  scripts/rv_review.py --push COMMAND ARG ...`: it runs rvpush only while the tagged RV is
+  alive (and, on macOS and Linux, with rvpush's own no-launch setting), so a missing window is
+  reported instead of a stray RV starting. The script launches RV detached and sends its
+  output to `<temp>/rv-review-<tag>.log`.
+- **rvpush finds RV through port files in the temp folder**, so caller and RV must share the
+  system temp folder. A sandboxed shell with its own temp folder cannot reach the window.
 - **Each `rv` launch opens a new window.** Reuse one only through the script or rvpush.
 - **macOS: a covered RV window may not repaint**, and a refresh through rvpush does not
   bring RV forward. The script raises the window after each refresh, but macOS can keep

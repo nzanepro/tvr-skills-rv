@@ -1,14 +1,15 @@
 # rv and rvpush by hand
 
-Read this when driving RV without `scripts/rv_review.py` (no Python, debugging a load, or a
-setup the script does not cover), when rvpush returns something unexpected, or when the user
-asks for wipe / difference / tile directly. The script does all of this for you.
+Read this when driving RV step by step (debugging a load, or a setup the script's options do
+not cover), when rvpush returns something unexpected, or when the user asks for wipe /
+difference / tile directly. `scripts/rv_review.py` does all of this for you; the commands
+below send single rvpush commands through its `--push` option.
 
 Contents: [Where rv lives](#where-rv-lives) · [Start a review window](#start-a-review-window) ·
 [Replace or add media](#replace-or-add-media) · [After loading](#after-loading) ·
 [Read the state back](#read-the-state-back) · [Layouts and flags](#layouts-and-flags) ·
 [Wipe position](#wipe-position) · [Check the frame keys](#check-the-frame-keys) ·
-[rvpush exit codes](#rvpush-exit-codes) · [Environment variables](#environment-variables)
+[rvpush exit codes](#rvpush-exit-codes) · [Variables RV reads](#variables-rv-reads)
 
 ## Where rv lives
 
@@ -36,29 +37,37 @@ Start-Process -FilePath 'C:\Program Files\OpenRV\bin\rv.exe' -ArgumentList '-net
 ```
 
 Every `rv` launch opens a new window; reuse one only through rvpush. Wait until RV answers
-before pushing: `RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review py-eval-return
-"len(rv.commands.sources())"` prints a number greater than 0 once the sources are in.
+before pushing: `python scripts/rv_review.py --push py-eval-return
+"len(rv.commands.sources())"` puts a number greater than 0 in `output` once the sources are
+in.
 
-Every rvpush command on this page sets `RVPUSH_RV_EXECUTABLE_PATH=none`: plain rvpush starts
-a new RV of its own when no RV answers the tag (exit 15, and that RV is tied to the calling
-shell). With `none` it exits 11 instead. In PowerShell set it once per session with
-`Set-Item Env:RVPUSH_RV_EXECUTABLE_PATH none` and drop the prefix.
+Send every rvpush command through `python scripts/rv_review.py [--tag T] --push COMMAND ARG
+...` (default tag `rv-review`; `--push` and its arguments come last). It prints one JSON line
+with rvpush's `output` and `rvpush_exit`, and it runs rvpush only while an RV with that tag is
+alive: when none is, it reports that and exits 1 without starting anything. A plain rvpush
+would instead start a new RV of its own when no RV answers the tag (exit 15), with the pushed
+command as its start-up script and tied to the calling shell. On macOS and Linux the script
+also runs rvpush under `/usr/bin/env RVPUSH_RV_EXECUTABLE_PATH=none`, which tells rvpush never
+to start one. Windows has no such launcher, so there the live-RV check is the only guard: if
+the tagged RV quits or stops answering in the moment between the check and the push, rvpush
+can still start a new RV (rare; close the extra window).
 
 ## Replace or add media
 
 ```bash
-RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review set   before.png after.png v2.png      # replace everything
-RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review merge extra.png                        # append
-RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review set [ left.exr right.exr ] [ shot.mov -in 101 -out 120 ]
+python scripts/rv_review.py --push set   before.png after.png v2.png      # replace everything
+python scripts/rv_review.py --push merge extra.png                        # append
+python scripts/rv_review.py --push set [ left.exr right.exr ] [ shot.mov -in 101 -out 120 ]
 ```
 
-- `-tag` must be the first argument.
+- Called directly, rvpush takes `-tag T` as its first argument; the script adds it.
 - `set` replaces the session (frame 1, marks cleared; display settings such as the stereo mode are kept); `merge`
   appends.
 - Brackets are separate arguments with spaces around them.
 - On Windows `set` / `merge` paths may use backslashes; rvpush converts them.
-- rvpush finds RV through port files RV writes in the temp folder (`tweak_rv_proc`), so run
-  rvpush with the same TEMP / TMPDIR as RV.
+- rvpush finds RV through port files RV writes in the system temp folder
+  (`tweak_rv_proc/<pid>_<tag>`), and the script's live-RV check reads the same files, so run
+  them from the same user session as RV.
 
 ## After loading
 
@@ -67,7 +76,7 @@ Its globals and locals are separate: comprehensions cannot see local names or im
 spell out `rv.commands.` and inline the lists.
 
 ```bash
-RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review py-exec "rv.commands.setViewNode('defaultSequence'); rv.commands.stop(); rv.commands.setFPS(1.0); rv.commands.setFrame(rv.commands.frameStart()); [rv.commands.markFrame(f, True) for f in [1,4]]"
+python scripts/rv_review.py --push py-exec "rv.commands.setViewNode('defaultSequence'); rv.commands.stop(); rv.commands.setFPS(1.0); rv.commands.setFrame(rv.commands.frameStart()); [rv.commands.markFrame(f, True) for f in [1,4]]"
 ```
 
 In PowerShell 5.1 keep the Python in double quotes and use only single quotes inside it.
@@ -75,7 +84,7 @@ In PowerShell 5.1 keep the Python in double quotes and use only single quotes in
 ## Read the state back
 
 ```bash
-RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review py-eval-return "(rv.commands.frame(), rv.commands.frameStart(), rv.commands.frameEnd(), rv.commands.markedFrames(), rv.commands.getIntProperty('defaultSequence_sequence.edl.frame'), len(rv.commands.nodesOfType('RVFileSource')), rv.commands.viewNode(), rv.commands.getStringProperty('@RVDisplayStereo.stereo.type'), rv.commands.fps())"
+python scripts/rv_review.py --push py-eval-return "(rv.commands.frame(), rv.commands.frameStart(), rv.commands.frameEnd(), rv.commands.markedFrames(), rv.commands.getIntProperty('defaultSequence_sequence.edl.frame'), len(rv.commands.nodesOfType('RVFileSource')), rv.commands.viewNode(), rv.commands.getStringProperty('@RVDisplayStereo.stereo.type'), rv.commands.fps())"
 ```
 
 Compare with what was loaded: `frameEnd - frameStart + 1` frames, one `RVFileSource` per
@@ -86,7 +95,7 @@ For a stack (wipe, difference, over, replace) also read its composite, whether t
 is on, and the visible box of the top source (next section):
 
 ```bash
-RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review py-eval-return "(rv.commands.getStringProperty('defaultStack_stack.composite.type'), rv.runtime.eval('rvui.wipeShown()', ['rvui']), rv.commands.getFloatProperty('defaultStack_t_' + rv.commands.nodeConnections('defaultStack', False)[0][0] + '.stencil.visibleBox'))"
+python scripts/rv_review.py --push py-eval-return "(rv.commands.getStringProperty('defaultStack_stack.composite.type'), rv.runtime.eval('rvui.wipeShown()', ['rvui']), rv.commands.getFloatProperty('defaultStack_t_' + rv.commands.nodeConnections('defaultStack', False)[0][0] + '.stencil.visibleBox'))"
 ```
 
 `(['over'], '2', [0.0, 0.5, 0.0, 1.0])` is a wipe split down the middle. `wipeShown()` returns
@@ -124,7 +133,7 @@ same property while dragging. Show the first source on the left half and the sec
 right:
 
 ```bash
-RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review py-exec "rv.commands.setFloatProperty('defaultStack_t_' + rv.commands.nodeConnections('defaultStack', False)[0][0] + '.stencil.visibleBox', [0.0, 0.5, 0.0, 1.0], True)"
+python scripts/rv_review.py --push py-exec "rv.commands.setFloatProperty('defaultStack_t_' + rv.commands.nodeConnections('defaultStack', False)[0][0] + '.stencil.visibleBox', [0.0, 0.5, 0.0, 1.0], True)"
 ```
 
 `[0.0, 1.0, 0.0, 1.0]` is the whole image again (also Wipes > Reset All Wipes). A saved `.rv`
@@ -142,9 +151,9 @@ back to the frame it started on. The window needs two or more frames (a sequence
 two stills is one frame). By hand:
 
 ```bash
-RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review py-eval-return "[b for b in rv.commands.bindings() if b[0] in ['key-down--right', 'key-down--left', 'key-down--alt--right', 'key-down--alt--left']]"
-RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review py-exec "rv.commands.sendInternalEvent('key-down--right', '', '')"
-RVPUSH_RV_EXECUTABLE_PATH=none rvpush -tag rv-review py-eval-return "rv.commands.frame()"
+python scripts/rv_review.py --push py-eval-return "[b for b in rv.commands.bindings() if b[0] in ['key-down--right', 'key-down--left', 'key-down--alt--right', 'key-down--alt--left']]"
+python scripts/rv_review.py --push py-exec "rv.commands.sendInternalEvent('key-down--right', '', '')"
+python scripts/rv_review.py --push py-eval-return "rv.commands.frame()"
 ```
 
 | Key | Event | RV's action (`rvui.mu`, `extra_commands.mu`) |
@@ -180,15 +189,17 @@ Alt / Option for themselves.
 | 2 | missing tag |
 | 3 | unknown command |
 | 4 | connection to the running RV failed |
-| 11 | no RV with this tag, and none started (`RVPUSH_RV_EXECUTABLE_PATH=none`) |
+| 11 | no RV with this tag, and none started (rvpush's no-launch setting; also what the script reports when its live-RV check finds none) |
 | 15 | no RV was running, so rvpush started one (avoid: it is tied to the calling shell) |
 
-## Environment variables
+## Variables RV reads
+
+RV and rvpush read these from the shell they start in; the skill's scripts read none of them
+(they find RV from `--rv-bin`, the config file, PATH and the install folders).
 
 | Variable | Set by | Meaning |
 |---|---|---|
-| `RV_BIN` | you | this skill's own: folder holding rv and rvpush |
-| `RVPUSH_RV_EXECUTABLE_PATH` | you | rv executable rvpush starts when no RV answers; `none` = never start one |
+| `RVPUSH_RV_EXECUTABLE_PATH` | you, or the script for rvpush on macOS / Linux | rv executable rvpush starts when no RV answers; `none` = never start one |
 | `RV_PATH` | you | rv executable; read by RV's Nuke integration |
 | `RV_HOME` | Linux `rv` / `rvpush` wrapper scripts, or you | install root, with rv in its `bin` folder; not set on Windows or macOS |
 | `RV_APP_RV` | RV, for processes it starts | path of the running rv executable |

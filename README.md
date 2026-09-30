@@ -83,22 +83,20 @@ The launcher itself uses only the Python standard library and runs on Windows, m
 
 ### How the launcher finds RV
 
-First match wins; `rvpush` must be in the same folder as `rv`.
+First match wins; `rvpush` must be in the same folder as `rv`. No shell variable is read.
 
 | Order | Where | Notes |
 |---|---|---|
-| 1 | `--rv-bin DIR` | folder holding rv and rvpush, or the rv executable itself |
-| 2 | `RV_BIN` | this project's own variable, same meaning |
-| 3 | `RVPUSH_RV_EXECUTABLE_PATH` | rv executable that rvpush would start; ignored when `none` (OpenRV `src/bin/apps/rvpush/RvPusher.cpp`, [rvpush manual](https://aswf-openrv.readthedocs.io/en/latest/rv-manuals/rv-user-manual/rv-user-manual-chapter-eighteen.html)) |
-| 4 | `RV_PATH` | rv executable; the convention RV's Nuke integration reads (`rvNuke.py`) |
-| 5 | `RV_APP_RV` | set by RV for the processes it starts (OpenRV `src/bin/apps/rv/main.cpp`) |
-| 6 | `RV_HOME` | install root, rv in `RV_HOME/bin` (`RV.app/Contents/MacOS` for an app bundle); set by the Linux `rv` wrapper script (OpenRV `src/bin/apps/rv/rv.wrapper`), not by the Windows or macOS builds |
-| 7 | `PATH` | `rv.exe`, `RV` or `rv` |
-| 8 | Windows registry | `App Paths\rv.exe`, added by the `.reg` files RV ships in `etc/` |
-| 9 | install folders, newest first | Windows `Program Files\OpenRV*\bin`, `Program Files\{Autodesk,ShotGrid,Shotgun}\RV*\bin`; macOS `/Applications` and `~/Applications` `RV*.app` / `OpenRV*.app` `/Contents/MacOS`; Linux `/opt/rv*/bin`, `/opt/RV*/bin`, `/opt/OpenRV*/bin`, `/usr/local/rv*/bin`, `/usr/local/bin` |
+| 1 | `--rv-bin DIR` | folder holding rv and rvpush, the rv executable itself, an install root or an `.app` bundle |
+| 2 | config file | `"rv_bin"` in `~/.config/tvr-skills-rv/config.json`, same forms as `--rv-bin` (a leading `~` is the home folder), for example `{"rv_bin": "/opt/rv/bin"}` |
+| 3 | `PATH` | `rv.exe`, `RV` or `rv` |
+| 4 | Windows registry | `App Paths\rv.exe`, added by the `.reg` files RV ships in `etc/` |
+| 5 | install folders, newest first | Windows `Program Files` and `Program Files (x86)` `\OpenRV*\bin`, `\{Autodesk,ShotGrid,Shotgun}\RV*\bin`; macOS `/Applications` and `~/Applications` `RV*.app` / `OpenRV*.app` `/Contents/MacOS`; Linux `/opt/rv*/bin`, `/opt/RV*/bin`, `/opt/OpenRV*/bin`, `/usr/local/rv*/bin`, `/usr/local/bin` |
+| 6 | OpenRV built from source | an [openrv-build-plugin](https://github.com/loorthu/openrv-build-plugin) checkout (a folder holding `rvcmds.sh`): the current folder or one above it, `~/OpenRV`, or `C:\OpenRV` on Windows; then its `_build/stage/app/RV.app/Contents/MacOS` (macOS) or `_build/stage/app/bin` |
 
-`RV_SUPPORT_PATH`, `RV_PREFS_OVERRIDE_PATH` and `RV_PREFS_CLOBBER_PATH` are also RV variables,
-but they point at support and preference folders, not at the executable.
+The same config file can also hold `"chrome"` and `"playwright_browsers"` for web capture and
+SVG rendering, and `"adb"` for Android capture; each has a matching flag (`--chrome`,
+`--playwright-browsers`, `--adb`) that wins over the file.
 
 ## Install the Claude Code plugin
 
@@ -264,9 +262,12 @@ runs are in [`rv-review/references/rv-commands.md`](rv-review/references/rv-comm
 
 - **No hooks, servers or background jobs.** The plugin is four skills. Their Python scripts
   run only when the agent (or you) runs them, with your own permissions, and install nothing.
-  They read environment variables only to find programs: RV's (below), `CHROME_PATH`,
-  `PLAYWRIGHT_BROWSERS_PATH`, `ANDROID_HOME` / `ANDROID_SDK_ROOT`, and each OS's standard
-  folder variables (Program Files, AppData, XDG, the home folder).
+  They read no shell or system variables: programs are found from flags (`--rv-bin`,
+  `--chrome`, `--playwright-browsers`, `--adb`), the optional config file
+  `~/.config/tvr-skills-rv/config.json`, `PATH`, the Windows registry and known folders, and
+  the usual install folders. On macOS and Linux, rvpush runs under
+  `/usr/bin/env RVPUSH_RV_EXECUTABLE_PATH=none`, which sets that one variable for rvpush so it
+  never starts an RV of its own.
 - **RV on this computer.** The scripts find RV and its tools (see
   [How the launcher finds RV](#how-the-launcher-finds-rv)), start `rv` detached with
   networking on under a tag, and talk to it through `rvpush`, which connects to the RV
@@ -291,11 +292,13 @@ See [SECURITY.md](SECURITY.md) to report a problem.
 
 ## Troubleshooting
 
-- **"RV not found"**: pass `--rv-bin <folder with rv and rvpush>` or set `RV_BIN`; on macOS
-  the folder is `RV.app/Contents/MacOS`.
+- **"RV not found"**: pass `--rv-bin <folder with rv and rvpush>`, set the plugin's "RV bin
+  folder" option, or put `{"rv_bin": "<folder>"}` in `~/.config/tvr-skills-rv/config.json`;
+  on macOS the folder is `RV.app/Contents/MacOS`. `RV_BIN` and RV's own variables are no
+  longer read (0.3.0).
 - **A second RV window opens instead of reusing the first**: the first was not started by the
   launcher (no network tag), or it uses another `--tag`. rvpush also finds RV through files in
-  the temp folder, so a shell with a different TEMP / TMPDIR cannot see the window.
+  the system temp folder, so a shell with a different temp folder cannot see the window.
 - **Exit 3 / `"ok": false`**: run the same command again once; if `problems` persists, check
   that every source opens in RV by hand.
 - **`split` says "not a stacked sheet"**: pixel (0, 0) must be the sheet background and panels
@@ -318,8 +321,8 @@ See [SECURITY.md](SECURITY.md) to report a problem.
   edge in from the side of the frame.
 - **Web captures or SVG rasterising time out, although the PNGs exist**: some Chrome builds
   never exit after `--screenshot`. 0.2.2 and later stop the browser once the PNG is complete
-  and prefer a `chrome-headless-shell` (on PATH or Playwright's); set `CHROME_PATH` to pick a
-  browser yourself.
+  and prefer a `chrome-headless-shell` (on PATH or Playwright's); pass `--chrome PATH` (or put
+  `"chrome"` in the config file) to pick a browser yourself.
 - **A frame shows "error reading" but the load said ok**: 0.2.2 and later decode every still
   and the first frame of each sequence before loading and report failures in `errors`
   (exit 3). Re-render or re-export the file; `--no-decode-check` skips the check.

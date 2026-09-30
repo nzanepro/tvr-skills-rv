@@ -18,7 +18,7 @@ The device settings changed for the capture (appearance, text size, night mode, 
 display size) are put back afterwards. Nothing is installed: iOS needs macOS with Xcode's
 xcrun simctl and a booted simulator; Android needs adb (--adb PATH, else "adb" in
 ~/.config/tvr-skills-rv/config.json, else PATH, else the Android SDK's default folder) and one
-device or emulator (or --serial); no environment variable is read. Electron needs Node with the
+device or emulator (or --serial); no shell variable is read. Electron needs Node with the
 project's own Playwright (Playwright's Electron support is experimental). --dry-run prints the
 commands without running anything, on any OS.
 

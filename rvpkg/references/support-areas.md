@@ -9,7 +9,7 @@ working out why RV does or does not see a package.
 
 | OS | User area | Install area (read-only for normal users) |
 |---|---|---|
-| Windows | `%APPDATA%\RV` | `<install>\plugins` |
+| Windows | `~\AppData\Roaming\RV` (Roaming AppData) | `<install>\plugins` |
 | macOS | `~/Library/Application Support/RV` | inside the app bundle |
 | Linux | `~/.rv` | `<install>/plugins` |
 

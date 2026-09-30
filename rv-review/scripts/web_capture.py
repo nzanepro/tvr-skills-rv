@@ -23,7 +23,7 @@ found. Playwright's browsers must have been installed by the user (playwright in
 chrome-cli browser: --chrome PATH (else "chrome" in ~/.config/tvr-skills-rv/config.json)
 always wins; otherwise a chrome-headless-shell is preferred (on PATH, then Playwright's copy,
 newest first, in --playwright-browsers DIR or "playwright_browsers" in the config file, else
-Playwright's own cache folder), then an installed Chrome, Chromium or Edge. No environment
+Playwright's own cache folder), then an installed Chrome, Chromium or Edge. No shell
 variable is read. The browser is stopped as soon as the screenshot is complete, since some
 Chrome builds never exit after writing it.
 

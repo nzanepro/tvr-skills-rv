@@ -21,7 +21,7 @@ python scripts/rv_find.py --path rvls    # or without --path for every RV tool a
 
 Search order: `--rv-bin`, `rv_bin` in `~/.config/tvr-skills-rv/config.json`, `PATH`, the
 Windows registry, the usual install folders, then an OpenRV built from source (`~/OpenRV`,
-or the checkout you are in). No environment variable is read. If nothing is found, ask the
+or the checkout you are in). No shell variable is read. If nothing is found, ask the
 user where RV is installed and pass `--rv-bin`.
 
 ## Scripts

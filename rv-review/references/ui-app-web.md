@@ -65,10 +65,11 @@ python scripts/web_capture.py site_v1/index.html --version v1 --out caps --full-
   headless browser from its command line (viewport only: no `--full-page`, no `--wait-for`,
   Chromium only). `--list-backends` shows what is present and which browser was picked;
   nothing is installed. `--dry-run` prints the plan.
-- Command-line browser: `CHROME_PATH` (an executable) always wins. Otherwise a
-  `chrome-headless-shell` is preferred: on PATH, then Playwright's copy (newest first, under
-  `PLAYWRIGHT_BROWSERS_PATH` or Playwright's cache; `playwright install chromium` fetches
-  it), then an installed Chrome, Chromium or Edge. Some Chrome builds write the screenshot
+- Command-line browser: `--chrome PATH` (an executable; default `"chrome"` in
+  `~/.config/tvr-skills-rv/config.json`) always wins. Otherwise a `chrome-headless-shell` is
+  preferred: on PATH, then Playwright's copy (newest first, in `--playwright-browsers DIR`
+  or `"playwright_browsers"` in the config file, then Playwright's own cache folder; the
+  user's own Playwright setup puts it there), then an installed Chrome, Chromium or Edge. Some Chrome builds write the screenshot
   and never exit, so the script stops the browser once the PNG is complete and reports it in
   the JSON `notes`; each capture uses a temporary profile that is removed afterwards.
 - **Tall pages.** `--full-page` keeps one tall frame per page: in RV press F to fit it, 1 for
@@ -105,7 +106,7 @@ with `rv_review.py A B --compare wipe`.
 
 RV does not read SVG. `rasterize.py` renders with the first backend found: resvg,
 rsvg-convert, CairoSVG, Inkscape, Playwright's Chromium, then a headless browser picked as
-for `web_capture.py` (`CHROME_PATH`, a `chrome-headless-shell`, then Chrome / Edge).
+for `web_capture.py` (`--chrome`, a `chrome-headless-shell`, then Chrome / Edge).
 Renderers differ (fonts, filters, text), so render every version with one backend; the JSON
 says which was used.
 
@@ -149,7 +150,9 @@ being skipped silently; `--dry-run` previews the restore commands in a "restore"
 `--device <UDID>` (`xcrun simctl list devices available`); name the variants by device with
 separate `--out` folders or rename the variant folders.
 
-**Android** (emulator or device, adb from PATH, `ANDROID_HOME` or `ANDROID_SDK_ROOT`):
+**Android** (emulator or device; adb from `--adb PATH`, `"adb"` in the config file, PATH, or
+the SDK's default folder: `~/Library/Android/sdk` on macOS, `~/Android/Sdk` on Linux,
+`~\AppData\Local\Android\Sdk` on Windows, then `platform-tools`):
 
 ```bash
 python scripts/app_capture.py android --screen checkout --out caps --night no,yes \

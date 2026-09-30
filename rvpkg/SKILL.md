@@ -22,7 +22,7 @@ python scripts/rv_find.py --path rvpkg
 
 Search order: `--rv-bin`, `rv_bin` in `~/.config/tvr-skills-rv/config.json`, `PATH`, the
 Windows registry, the usual install folders, then an OpenRV built from source (`~/OpenRV`,
-or the checkout you are in). No environment variable is read. If nothing is found, ask the
+or the checkout you are in). No shell variable is read. If nothing is found, ask the
 user where RV is installed and pass `--rv-bin`.
 
 ## Scripts
@@ -58,7 +58,7 @@ Packages (the "Load" check box); for everyone, uninstall it.
 ## Steps for any change
 
 1. `python scripts/rvpkg_list.py --name TEXT` to see the package's current state and path.
-2. Pick the support area: the user area for one person (`%APPDATA%\RV`,
+2. Pick the support area: the user area for one person (`~\AppData\Roaming\RV`,
    `~/Library/Application Support/RV`, `~/.rv`), a shared studio folder on `RV_SUPPORT_PATH`
    for a team. The install's own `Packages` folder is normally read-only; do not change it.
 3. Run the rvpkg command with `-force` first (it never prompts then) and the package's full

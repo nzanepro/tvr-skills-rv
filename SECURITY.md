@@ -4,14 +4,17 @@
 
 Every script in this repository runs **locally**, with your own user permissions, and talks
 to RV / OpenRV on the same machine (through `rv`, `rvpush`, `rvio`, `rvls` and `rvpkg` on
-`PATH` or a path you give it). The only exception is `rv-review`'s `web_capture.py`: when
+`PATH`, in the usual install folders, or at a path you give it). The only exception is `rv-review`'s `web_capture.py`: when
 asked, it opens the web pages you give it in a local headless browser, which loads them like
 any browser visit. Nothing here:
 
 - makes network calls itself, other than those page loads,
 - uploads images, renders, or file paths anywhere,
 - installs or downloads RV/OpenRV, packages, or any other software on its own, or
-- needs, stores, or asks for credentials, tokens, or account details.
+- needs, stores, or asks for credentials, tokens, or account details, or
+- reads shell or system variables: programs are found from command-line flags, an optional
+  config file you write yourself (`~/.config/tvr-skills-rv/config.json`, paths only), `PATH`
+  and the usual install folders.
 
 `rvpkg`-related scripts can install or remove `.rvpkg` packages, but only ones you point them
 at; they do not fetch packages from the network. Because everything runs with the permissions

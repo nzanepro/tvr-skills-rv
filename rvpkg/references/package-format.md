@@ -48,11 +48,11 @@ description: |
 | `optional` | `true`: installed packages load only after opt-in |
 | `system`, `hidden` | shipped with RV / not shown in the preferences list |
 | `modes` | Mu or Python files RV loads as modes: `file`, `menu`, `shortcut`, `event`, `load` (`immediate` or `delay`), optional `requires` |
-| `files` | other files and where they go, e.g. `- file: notes.txt` with `location: SupportFiles/$PACKAGE` (`$PACKAGE` is the file name without the version) |
+| `files` | other files and where they go, e.g. `- file: notes.txt` with a `location` of `SupportFiles/` followed by the package placeholder (a dollar sign, then `PACKAGE`), which rvpkg replaces with the package file name without the version |
 | `description` | HTML shown in RV's preferences |
 
 In a test package, a `.mu` file without an entry went to `Mu/`, a `.py` mode to `Python/`,
-and `notes.txt` with `location: SupportFiles/$PACKAGE` to `SupportFiles/demopkg/`. Give every
+and `notes.txt` with that `SupportFiles/` plus placeholder location to `SupportFiles/demopkg/`. Give every
 file that is not a Mu or Python module a `files` entry.
 
 ## Building a package

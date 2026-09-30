@@ -1,5 +1,5 @@
 """Where things live on this computer, for the rv-review scripts, without reading any
-environment variable.
+shell or system variable.
 
 - The config file ~/.config/tvr-skills-rv/config.json: one JSON object of strings, all
   optional, for example

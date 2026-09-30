@@ -16,7 +16,7 @@ Fixes for two findings of Anthropic's plugin directory, and documentation; no sk
 ### Added
 
 - A plugin icon, icon.svg in `.claude-plugin/`, which `icon` in `plugin.json` also names (the directory reported `ICON_MISSING`): a hand-written 256 x 256 SVG in the README demo's colours, showing stacked review frames, the front one split by a wipe between a grey and a copper sphere, over a green timeline bar. `tests/test_plugin_icon.py` checks that it is a square SVG of at least 128 px with no text, scripts, raster images or external references.
-- A "What it runs and what it sends" section in the README: what the scripts start, which environment variables they read (only to find programs), where they write, and that `web_capture.py` loads the pages you give it in a local headless browser. `SECURITY.md` now names that exception to "no network calls".
+- A "What it runs and what it sends" section in the README: what the scripts start, which shell variables they read (only to find programs), where they write, and that `web_capture.py` loads the pages you give it in a local headless browser. `SECURITY.md` now names that exception to "no network calls".
 - CI runs `claude plugin validate --strict` on the repository and on `plugin.json` with a pinned Claude Code (2.1.284).
 - `scripts/check_repo.py` has a `readme-listing` check: no shell variable or command substitution in the README, and no repository image path in backticks or a code block in any Markdown file.
 
@@ -120,7 +120,7 @@ Packaging and documentation; no script or skill behaviour changed.
 - `rv-review/scripts/sheet_panels.py`: splits stacked sheets into labelled, equal-size frames
   and writes `frames.json`; labels unstacked renders.
 - `rv-review/scripts/rv_review.py`: cross-platform launcher (Windows, macOS, Linux, standard
-  library only). Finds RV through `--rv-bin`, `RV_BIN`, RV's own environment variables, `PATH`,
+  library only). Finds RV through `--rv-bin`, `RV_BIN`, RV's own variables, `PATH`,
   the Windows registry and the usual install folders; reuses the tagged window through rvpush;
   layouts (sequence, wipe, difference, over, replace, tile), multi-view selection and
   expansion, stereo modes, the lat-long viewer, automatic marks from the sequence EDL, and a
