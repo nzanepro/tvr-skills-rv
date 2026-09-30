@@ -97,8 +97,8 @@ def test_release_notes_hold_the_changelog_section_and_install_commands(br, tmp_p
     assert br.changelog_section(changelog, plugin["version"]) in notes
     assert f"## [{plugin['version']}]" not in notes
     assert "/plugin marketplace add nzanepro/tvr-skills-rv" in notes
-    assert "/plugin install rv@tvr-skills-rv" in notes
-    assert "claude plugin update rv@tvr-skills-rv" in notes
+    assert "/plugin install rv-tools@tvr-skills-rv" in notes
+    assert "claude plugin update rv-tools@tvr-skills-rv" in notes
 
 
 def test_changelog_section_stops_at_the_next_release_and_link_references(br):

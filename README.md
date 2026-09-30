@@ -105,16 +105,39 @@ SVG rendering, and `"adb"` for Android capture; each has a matching flag (`--chr
 
 ```
 /plugin marketplace add nzanepro/tvr-skills-rv
-/plugin install rv@tvr-skills-rv
+/plugin install rv-tools@tvr-skills-rv
 ```
+
+The install asks for one optional setting, **RV bin folder**: the folder that holds `rv` and
+`rvpush` (`<install>/bin`, or `RV.app/Contents/MacOS` on macOS). Leave it empty when RV is
+on `PATH` or in its usual install folder. Change it later with
+`/plugin configure rv-tools@tvr-skills-rv`, or set it from your shell with
+`claude plugin install rv-tools@tvr-skills-rv --config rv_bin=<folder>`.
 
 Free and MIT-licensed. If it saves you time, you can [buy me a coffee](https://buymeacoffee.com/trespassvr).
 
 **Install before you start a session.** Claude Code loads skills and plugins when a session starts, so they work best when installed first. If you install one during a session, start a new session before asking for it.
 
 On Claude Code v2.1.275 or later, one command adds the marketplace and installs the plugin:
-`/plugin install rv --marketplace nzanepro/tvr-skills-rv`. Plugin skills are namespaced, so
-the skill is `/rv:rv-review`. To update, see [Updating](#updating).
+`/plugin install rv-tools --marketplace nzanepro/tvr-skills-rv`. Plugin skills are
+namespaced, so the skills are `/rv-tools:rv-review`, `/rv-tools:rvio`, `/rv-tools:rvls` and
+`/rv-tools:rvpkg`. To update, see [Updating](#updating).
+
+**Installed version 0.2.x as `rv@tvr-skills-rv`?** 0.3.0 renamed the plugin to `rv-tools`
+(the skills and their folders keep their names). Remove the old one and install the new one,
+in your shell:
+
+```
+claude plugin uninstall rv@tvr-skills-rv
+claude plugin marketplace update tvr-skills-rv
+claude plugin install rv-tools@tvr-skills-rv
+```
+
+or inside Claude Code: `/plugin uninstall rv@tvr-skills-rv`, then
+`/plugin marketplace update tvr-skills-rv` and `/plugin install rv-tools@tvr-skills-rv`, and
+start a new session. If you set `RV_BIN` for 0.2.x, pass that folder as the RV bin folder
+setting (or put it in `~/.config/tvr-skills-rv/config.json` as `"rv_bin"`): 0.3.0 reads no
+shell variables.
 
 **Personal skill** (every project), from a clone in your home folder (macOS and Linux):
 
@@ -166,7 +189,7 @@ Ask in plain words; RV does not have to be named:
 - "Compare the old and new icon SVGs."
 - "Pull the notes the reviewer drew in RV."
 
-Or call it directly: `/rv-review` (personal or project install) or `/rv:rv-review` (plugin). If
+Or call it directly: `/rv-review` (personal or project install) or `/rv-tools:rv-review` (plugin). If
 it does not trigger on its own, ask for the rv-review skill by name.
 
 | Key in RV | Action |
@@ -355,7 +378,7 @@ hand-written SVG in the same colours.
 
 ## Updating
 
-**Plugin marketplace install**: in your shell, run `claude plugin update rv@tvr-skills-rv`; it refreshes the marketplace and installs the new version if the plugin's version changed. Inside Claude Code, the same is **Update now** on the plugin's page in the **Installed** tab of `/plugin`. The update loads in your next session, or after `/reload-plugins`. `/plugin marketplace update tvr-skills-rv` on its own only refreshes the list of plugins, and there is no need to reinstall. To update automatically, turn on auto-update for `tvr-skills-rv` in the **Marketplaces** tab of `/plugin`; it is off by default for marketplaces outside Anthropic's. **Personal, linked or project skill (a clone)**: `git pull` in the clone; a linked skill folder picks the change up automatically, a copied one needs a fresh copy. To hear about new releases, use GitHub's Watch > Custom > Releases on this repository.
+**Plugin marketplace install**: in your shell, run `claude plugin update rv-tools@tvr-skills-rv`; it refreshes the marketplace and installs the new version if the plugin's version changed. Inside Claude Code, the same is **Update now** on the plugin's page in the **Installed** tab of `/plugin`. The update loads in your next session, or after `/reload-plugins`. `/plugin marketplace update tvr-skills-rv` on its own only refreshes the list of plugins, and there is no need to reinstall. To update automatically, turn on auto-update for `tvr-skills-rv` in the **Marketplaces** tab of `/plugin`; it is off by default for marketplaces outside Anthropic's. **Personal, linked or project skill (a clone)**: `git pull` in the clone; a linked skill folder picks the change up automatically, a copied one needs a fresh copy. To hear about new releases, use GitHub's Watch > Custom > Releases on this repository.
 
 ## Changelog
 
@@ -401,5 +424,6 @@ These skills are free and MIT-licensed. If they save you time, you can support t
 
 MIT; see [LICENSE](LICENSE). Each skill folder carries a copy as `LICENSE.txt`.
 
-RV is a trademark of its owner; OpenRV is an Academy Software Foundation project. This project
-is not affiliated with RV, OpenRV, Autodesk or the Academy Software Foundation.
+RV and OpenRV are trademarks of their respective owners; OpenRV is an Academy Software
+Foundation project. This project is not affiliated with or endorsed by Autodesk or the Academy
+Software Foundation.

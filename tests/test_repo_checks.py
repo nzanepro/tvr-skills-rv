@@ -448,17 +448,18 @@ def test_versions_clean_on_real_repo(cr):
 
 
 def test_real_plugin_keeps_its_names_and_skills():
-    """Users install `rv@tvr-skills-rv` and run `/rv:<skill>`, and release zips and tests use
-    the skill folders at the repository root, so none of these may change by accident."""
+    """Users install `rv-tools@tvr-skills-rv` and run `/rv-tools:<skill>` (0.3.0 renamed the
+    plugin from `rv`, which the directory held as too close to another listing's name), and
+    release zips and tests use the skill folders at the repository root, so none of these may
+    change by accident."""
     marketplace = json.loads((REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
     plugin = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     assert marketplace["name"] == "tvr-skills-rv"
-    assert [entry["name"] for entry in marketplace["plugins"]] == ["rv"]
+    assert [entry["name"] for entry in marketplace["plugins"]] == ["rv-tools"]
     entry = marketplace["plugins"][0]
     assert entry["source"] == "./"
-    assert plugin["name"] == "rv"
-    # The directory holds the bare two-letter name as too close to another listing's; the
-    # display name it shows instead says what the plugin is.
+    assert plugin["name"] == "rv-tools"
+    # The display name the directory shows says what the plugin is.
     assert plugin["displayName"] == "RV and OpenRV Media Review"
     assert plugin["skills"] == ["./rv-review", "./rvio", "./rvls", "./rvpkg"]
     # One description, shown both before install (entry) and after (plugin.json).
