@@ -18,7 +18,7 @@ working out why RV does or does not see a package.
 - A list of area folders, separated by `;` on Windows and `:` on macOS and Linux.
 - It replaces the user area. The install's own area is still appended, so the built-in
   packages stay visible. Put the user area in the list yourself if it should still count:
-  `RV_SUPPORT_PATH=/studio/rv/support:$HOME/.rv`.
+  `RV_SUPPORT_PATH=/studio/rv/support:~/.rv` (the shell expands a `~` after the `:`).
 - The same package can exist in several areas; `-list` shows every copy with its path.
 - `rvpkg -include DIR` adds one area for a single command; `-only DIR` uses DIR instead of
   the variable (the install area is still listed).
