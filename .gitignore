@@ -10,8 +10,9 @@ __pycache__/
 # rv-review output frames
 rv_frames/
 
-# packaged skills
+# packaged skills and release builds (scripts/build_release.py)
 *.skill
+dist/
 
 # local list of private words for scripts/check_repo.py (never commit)
 .private-words

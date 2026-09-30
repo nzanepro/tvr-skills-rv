@@ -56,6 +56,24 @@ skills that `plugin.json` lists outside a `skills/` folder, as this repository's
 `check_repo.py` and the tests check their frontmatter. `plugin.json` is the plugin's manifest:
 declare skills there, not in the marketplace entry.
 
+## Making a release (maintainers)
+
+1. Set the new plugin version in `.claude-plugin/plugin.json` and the top-level `version` in
+   `.claude-plugin/marketplace.json` (the marketplace entry carries no version of its own).
+   Bump `metadata.version` only in the `SKILL.md` of skills whose files changed.
+2. Add a `## [X.Y.Z] - YYYY-MM-DD` section to `CHANGELOG.md` and its link reference at the
+   bottom. `python scripts/check_repo.py` fails until all of these agree.
+3. Run the tests, `claude plugin validate . --strict` and `python scripts/check_repo.py`, and
+   merge to `main`.
+4. Tag the merge commit `vX.Y.Z` and push the tag. `.github/workflows/release.yml` runs the
+   tests and checks again, builds one zip per skill with `scripts/build_release.py` and
+   creates the GitHub release with that CHANGELOG section as its notes. Edit the release title
+   or notes on GitHub afterwards if you like; re-running the workflow for a tag whose release
+   already exists only re-uploads the zips.
+
+`python scripts/build_release.py --out dist` builds the same zips and notes locally
+(`dist/` is git-ignored).
+
 ## Privacy rules for anything you contribute
 
 This is a public repository. Please keep contributions free of:
