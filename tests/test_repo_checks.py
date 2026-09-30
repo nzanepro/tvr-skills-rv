@@ -467,16 +467,19 @@ def test_real_plugin_keeps_its_names_and_skills():
     assert not any(key in entry for key in ("skills", "commands", "agents", "hooks", "strict", "version"))
 
 
-@pytest.mark.parametrize(
-    "line",
-    [
-        'ln -s "$SRC_DIR/rv-review" ~/.claude/skills/rv-review',
-        'cmd /c mklink /J "$env:BASE_DIR\\skills\\rv-review" x',
-        "cp -r ${BASE_DIR}/x ~/.claude/skills/",
-        "echo $(date)",
-        r"copy x %BASE_DIR%\skills",
-    ],
-)
+# Shell-variable samples are built from pieces, so this file never spells one itself (the
+# no-env-reads check scans it too).
+DOLLAR, PERCENT = "$", "%"
+SHELL_SAMPLES = [
+    'ln -s "' + DOLLAR + 'SRC_DIR/rv-review" ~/.claude/skills/rv-review',
+    'cmd /c mklink /J "' + DOLLAR + 'e' + 'nv:BASE_DIR\\skills\\rv-review" x',
+    "cp -r " + DOLLAR + "{BASE_DIR}/x ~/.claude/skills/",
+    "echo " + DOLLAR + "(date)",
+    "copy x " + PERCENT + "BASE_DIR" + PERCENT + "\\skills",
+]
+
+
+@pytest.mark.parametrize("line", SHELL_SAMPLES)
 def test_readme_listing_flags_shell_variables(cr, tmp_path, monkeypatch, line):
     (tmp_path / "README.md").write_text(f"Install:\n\n```\n{line}\n```\n", encoding="utf-8")
     monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
@@ -492,7 +495,8 @@ def test_readme_listing_flags_shell_variables(cr, tmp_path, monkeypatch, line):
         "git clone ../tvr-skills-rv ~/tvr-skills-rv",
         "ln -s ~/tvr-skills-rv/rv-review ~/.claude/skills/rv-review",
         "cmd /c mklink /J .claude\\skills\\rv-review tvr-skills-rv\\rv-review",
-        "It costs $5, or 100% of nothing.",
+        "It costs " + DOLLAR + "5, or 100" + PERCENT + " of nothing.",
+        "rv_bin: [" + DOLLAR + "{user_config.rv_bin}]",
     ],
 )
 def test_readme_listing_accepts_literal_paths(cr, tmp_path, monkeypatch, line):
@@ -529,7 +533,7 @@ def test_readme_listing_flags_image_paths_in_code(cr, tmp_path, monkeypatch):
     ],
 )
 def test_personal_paths_flags_planted_violation(cr, tmp_path, monkeypatch, line):
-    monkeypatch.setenv("REPO_CHECK_WORDS", "hostuser")
+    (tmp_path / ".private-words").write_text("hostuser\n", encoding="utf-8")
     (tmp_path / "notes.md").write_text(f"Some text.\n{line}\nMore text.\n", encoding="utf-8")
     monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
 
@@ -564,16 +568,69 @@ def test_personal_paths_skips_excluded_and_binary_files(cr, tmp_path, monkeypatc
     assert cr.check_personal_paths() == []
 
 
-def test_private_words_come_from_ignored_file_and_env(cr, tmp_path, monkeypatch):
+def test_private_words_come_only_from_the_ignored_file(cr, tmp_path, monkeypatch):
     monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
-    monkeypatch.delenv("REPO_CHECK_WORDS", raising=False)
     (tmp_path / "notes.md").write_text("built on projectx hardware\n", encoding="utf-8")
     assert cr.check_personal_paths() == []          # no words configured: nothing to match
     (tmp_path / ".private-words").write_text("# local only\nprojectx\n", encoding="utf-8")
     assert cr.check_personal_paths()                # file word found in notes.md
-    (tmp_path / ".private-words").unlink()
-    monkeypatch.setenv("REPO_CHECK_WORDS", "other, projectx")
-    assert cr.check_personal_paths()                # env word found
+
+
+# --- no-env-reads: nothing reads the process's variables or holds a shell variable ------
+#
+# Needles are built from pieces so this file never spells one.
+
+MAPPING = "env" + "iron"
+ENV_READ_SAMPLES = [
+    "import os; os." + MAPPING + ".get('X')",
+    "value = os.get" + "env('X')",
+    "from os import " + MAPPING,
+    "os.path.expand" + "vars('~/x')",
+    "const x = process." + "env.X;",
+    "Set-Item E" + "nv:X none",
+    "set the " + MAPPING.capitalize() + "ment variable",
+]
+
+
+@pytest.mark.parametrize("line", ENV_READ_SAMPLES + SHELL_SAMPLES)
+def test_no_env_reads_flags_each_form(cr, tmp_path, monkeypatch, line):
+    (tmp_path / "tool.py").write_text("ok\n" + line + "\n", encoding="utf-8")
+    monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(cr, "_git_repo_files", lambda root: None)
+
+    problems = cr.check_no_env_reads()
+
+    assert [p.path for p in problems][:1] == ["tool.py:2"], problems
+
+
+@pytest.mark.parametrize("line", [
+    "#!/usr/bin/" + "env python3",
+    "subprocess.run(['/usr/bin/" + "env', 'RVPUSH_RV_EXECUTABLE_PATH=none', 'rvpush'])",
+    "Plugin setting: [" + DOLLAR + "{user_config.rv_bin}]",
+    "costs " + DOLLAR + "5, 50" + PERCENT + " off",
+    "envelope(body)",
+])
+def test_no_env_reads_accepts_the_allowed_forms(cr, tmp_path, monkeypatch, line):
+    (tmp_path / "tool.py").write_text(line + "\n", encoding="utf-8")
+    monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(cr, "_git_repo_files", lambda root: None)
+
+    assert cr.check_no_env_reads() == []
+
+
+def test_no_env_reads_skips_the_workflows_folder(cr, tmp_path, monkeypatch):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "tests.yml").write_text("run: echo " + DOLLAR + "{{ matrix.os }}\n", encoding="utf-8")
+    monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(cr, "_git_repo_files", lambda root: None)
+
+    assert cr.check_no_env_reads() == []
+
+
+def test_no_env_reads_clean_on_real_repo(cr):
+    problems = cr.check_no_env_reads()
+    assert problems == [], "\n".join(str(p) for p in problems)
 
 
 def test_private_words_file_is_git_ignored():

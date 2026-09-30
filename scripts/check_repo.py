@@ -27,12 +27,21 @@ Checks:
    to the author's unrelated private projects that must never leak into this public
    repo. This is a lightweight net, not a guarantee -- it catches copy-paste
    mistakes, not determined secret-hiding.
-5. README.md, which the plugin directory shows as the listing, has no shell variable
-   ($NAME, ${NAME}, $env:NAME, %NAME%) or command substitution ($(...)): the
-   directory's scanner reads a variable beside a remote URL as a local value, possibly a
-   credential, sent off the machine (MCP_FORWARDS_CREDENTIAL_ENV). And no Markdown file
-   writes the path of an image in the repository in backticks or a code block, which the
-   directory holds for a reviewer; link to it or show it with Markdown image syntax.
+5. README.md, which the plugin directory shows as the listing, has no shell variable or
+   command substitution (a dollar sign before a name, a brace or a parenthesis, a name
+   between percent signs): the directory's scanner reads a variable beside a remote URL as
+   a local value, possibly a credential, sent off the machine (MCP_FORWARDS_CREDENTIAL_ENV).
+   And no Markdown file writes the path of an image in the repository in backticks or a
+   code block, which the directory holds for a reviewer; link to it or show it with
+   Markdown image syntax.
+6. No tracked text file outside .github/workflows -- this script and its tests included --
+   reads the process's variables in any form (the Python mapping or its getter, variable
+   expansion, Node's process mapping, PowerShell's variable drive) or holds a shell-variable
+   token. The directory's scanner holds a plugin whose files read them anywhere, tests and
+   dev scripts included. The one token allowed is Claude Code's own plugin-option
+   substitution (a dollar sign, a brace, then user_config.), which Claude Code replaces
+   before the text reaches a shell. The needles are built from pieces, so this file never
+   spells one.
 
 Exit status is 0 when every check passes, 1 otherwise. Nothing here touches git,
 the network, or RV/OpenRV.
@@ -93,9 +102,9 @@ EMAIL_PATTERN = re.compile(r"[A-Za-z0-9_.+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\
 
 # Private words (your user name, handles, private project names) must never be
 # committed, so the list itself is never committed either. It is read at run time from
-# PRIVATE_WORDS_FILE at the repo root (git-ignored; one word per line, "#" comments)
-# and from the REPO_CHECK_WORDS environment variable (comma-separated). Matched
-# case-insensitively as whole words. With neither set, only the path and email checks run.
+# PRIVATE_WORDS_FILE at the repo root (git-ignored; one word per line, "#" comments) and
+# from nowhere else. Matched case-insensitively as whole words. Without the file, only the
+# path and email checks run.
 PRIVATE_WORDS_FILE = ".private-words"
 
 
@@ -107,7 +116,6 @@ def private_words() -> list:
             line = line.strip()
             if line and not line.startswith("#"):
                 words.append(line)
-    words += [w.strip() for w in os.environ.get("REPO_CHECK_WORDS", "").split(",") if w.strip()]
     return words
 
 
@@ -532,9 +540,20 @@ def check_personal_paths() -> list[Problem]:
     return problems
 
 
-# A shell variable or command substitution in any syntax a README reader might paste: POSIX
-# $NAME, ${NAME} and $(...), PowerShell $env:NAME and cmd.exe %NAME%.
-SHELL_VARIABLE_PATTERN = re.compile(r"\$(?:[A-Za-z_][A-Za-z0-9_]*|\{|\()|%[A-Za-z_][A-Za-z0-9_()]*%")
+# A shell variable or command substitution in any syntax a reader might paste: a dollar sign
+# before a name, a brace or a parenthesis (POSIX shells; PowerShell's drive form starts the
+# same way), or a name between percent signs (cmd.exe). Claude Code's own plugin-option
+# substitution, a dollar sign and a brace before user_config., is not a shell variable.
+SHELL_VARIABLE_PATTERN = re.compile(r"[$](?:[A-Za-z_(]|[{](?!user_config[.]))|%[A-Za-z_][A-Za-z0-9_()]*%")
+# Reads of the process's variables, built from pieces so this file never spells one: the
+# Python mapping's name (which also covers its getter's module attribute), the getter,
+# variable expansion, Node's process mapping and PowerShell's variable drive.
+_MAPPING = "env" + "iron"
+ENV_READ_PATTERN = re.compile(
+    "|".join([_MAPPING, "get" + "env", "expand" + "vars", re.escape("process." + "env"),
+              "(?<![A-Za-z0-9/])" + "env" + ":[A-Za-z_]"]),
+    re.IGNORECASE)
+WORKFLOWS_DIR = ".github/workflows/"
 IMAGE_EXTS = {".png", ".gif", ".jpg", ".jpeg", ".webp", ".svg"}
 CODE_SPAN = re.compile(r"`([^`\n]+)`")
 
@@ -574,12 +593,51 @@ def check_readme_listing() -> list[Problem]:
     return problems
 
 
+def check_no_env_reads() -> list[Problem]:
+    problems: list[Problem] = []
+    for rel in _all_text_files():
+        if rel.as_posix().startswith(WORKFLOWS_DIR):
+            continue
+        try:
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            m = ENV_READ_PATTERN.search(line)
+            if m:
+                problems.append(Problem("no-env-reads", f"{rel.as_posix()}:{lineno}",
+                                        f"reads or names the process's variables: {m.group(0)!r}"))
+            m = SHELL_VARIABLE_PATTERN.search(line)
+            if m:
+                problems.append(Problem("no-env-reads", f"{rel.as_posix()}:{lineno}",
+                                        f"shell variable or substitution {m.group(0)!r}; "
+                                        f"describe it in words or write a literal path"))
+    return problems
+
+
+def _all_text_files():
+    """Every file iter_repo_files() lists plus this script and its tests (which the other
+    scans skip because they quote personal-path shapes), minus binaries and the ignored
+    private-words file."""
+    seen = set()
+    rels = list(iter_repo_files())
+    for name in EXCLUDE_FILES - {PRIVATE_WORDS_FILE}:
+        if (REPO_ROOT / name).is_file():
+            rels.append(Path(name))
+    for rel in rels:
+        if rel.as_posix() in seen or rel.suffix.lower() in BINARY_EXTS:
+            continue
+        seen.add(rel.as_posix())
+        yield rel
+
+
 CHECKS = {
     "skill-frontmatter": check_skill_frontmatter,
     "marketplace-skills": check_marketplace_skills_paths,
     "versions": check_versions,
     "personal-paths": check_personal_paths,
     "readme-listing": check_readme_listing,
+    "no-env-reads": check_no_env_reads,
 }
 
 

@@ -91,6 +91,19 @@ This is a public repository. Please keep contributions free of:
 - Real renders, plates, or other copyrighted/production imagery. Demo and test images should
   be synthetic (procedurally generated, e.g. with Pillow), not real project output.
 
+`check_repo.py` flags common personal paths and emails. To also check for private words (your
+own name, a private project), list them one per line in a git-ignored `.private-words` file at
+the repository root; never commit that file.
+
+No file outside `.github/workflows`, tests and dev scripts included, may read shell or system
+variables or contain shell-variable syntax (a dollar sign before a name, brace or
+parenthesis, a name between percent signs, or PowerShell's variable drive): Anthropic's
+plugin directory holds a plugin for review when it does. Find programs from flags, the config
+file (`~/.config/tvr-skills-rv/config.json`), `PATH` and the install folders instead, and
+describe variables in words. The only allowed token is Claude Code's own `user_config`
+substitution of the `rv_bin` option in the `SKILL.md` files. `check_repo.py`'s `no-env-reads`
+check and `tests/test_no_env_reads.py` enforce this.
+
 If you are not sure whether something counts as personal or production data, ask in the pull
 request rather than posting it.
 
