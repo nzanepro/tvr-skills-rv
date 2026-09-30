@@ -18,20 +18,25 @@ second), otherwise the media's own rate; marks at the first frame of every view 
 frames.json, or at the first frame of every source when at least one source has more than
 one frame; stereo off.
 
-Finding RV (first match wins; rvpush must sit next to rv):
+Finding RV (first match wins; rvpush must sit next to rv). No environment variable is read:
   1. --rv-bin DIR
-  2. RV_BIN                      folder that holds rv (this skill's own variable)
-  3. RVPUSH_RV_EXECUTABLE_PATH   rv executable rvpush would start, unless it is "none"
-  4. RV_PATH                     rv executable (the convention RV's Nuke integration reads)
-  5. RV_APP_RV                   rv executable; RV sets it for processes it starts
-  6. RV_HOME                     install root: RV_HOME/bin (RV_HOME/Contents/MacOS for an .app);
-                                 the Linux rv wrapper script sets it
-  7. rv (rv.exe; RV on macOS) on PATH
-  8. Windows only: the App Paths registry key for rv.exe that RV's .reg files add
-  9. the usual install folders, newest version first:
-       Windows  Program Files/OpenRV*/bin, Program Files/{Autodesk,ShotGrid,Shotgun}/RV*/bin
+  2. "rv_bin" in ~/.config/tvr-skills-rv/config.json (a leading ~ is the home folder)
+  3. rv (rv.exe; RV on macOS) on PATH
+  4. Windows only: the App Paths registry key for rv.exe that RV's .reg files add
+  5. the usual install folders, newest version first:
+       Windows  Program Files (and x86)/OpenRV*/bin, .../{Autodesk,ShotGrid,Shotgun}/RV*/bin
        macOS    /Applications and ~/Applications: RV*.app, OpenRV*.app (Contents/MacOS)
        Linux    /opt/rv*/bin, /opt/RV*/bin, /opt/OpenRV*/bin, /usr/local/rv*/bin, /usr/local/bin
+  6. an OpenRV built from source (openrv-build plugin): the current folder, one of its
+     parents, ~/OpenRV or (Windows) C:/OpenRV holding rvcmds.sh, then
+     _build/stage/app/RV.app/Contents/MacOS (macOS) or _build/stage/app/bin
+
+Talking to RV: rvpush is only run when the tagged RV is alive (its port file in
+<temp>/tweak_rv_proc names a running process), so a missing window is reported instead of
+rvpush starting an RV of its own; on macOS and Linux rvpush also runs under
+/usr/bin/env RVPUSH_RV_EXECUTABLE_PATH=none, which stops it starting one at all.
+--push COMMAND ARG ... runs one such guarded rvpush command (set, merge, py-exec,
+py-eval-return, ...) against the tag and prints its output in the JSON result.
 
 Callers such as other skills pass a review manifest (--manifest FILE, or - for stdin): ordered
 items with labels, groups, in / out, fps, views and a free-form "meta" object that comes back
@@ -76,7 +81,8 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(os.path.abspath(__file__)).parent))
-import review_manifest as rm  # noqa: E402  (same folder; standard library only)
+import local_config  # noqa: E402  (same folder; standard library only)
+import review_manifest as rm  # noqa: E402
 import rv_session  # noqa: E402
 
 DEFAULT_TAG = "rv-review"     # network tag that marks the review window; one window per tag
@@ -159,17 +165,17 @@ def _natural_key(path):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", str(path))]
 
 
-def install_patterns(platform=None, env=None, home=None, root="/"):
-    """Glob patterns for the usual install folders, in the order they are tried."""
-    env = os.environ if env is None else env
+def install_patterns(platform=None, home=None, root="/", program_files=None):
+    """Glob patterns for the usual install folders, in the order they are tried.
+    program_files: callable returning the Windows Program Files folders (default: the known
+    folders, then C:/Program Files and C:/Program Files (x86); under a test root, the root's)."""
     kind = _os_kind(platform)
     root = Path(root)
     if kind == "windows":
         pats = []
-        for var in ("ProgramFiles", "ProgramW6432"):
-            if not env.get(var):
-                continue
-            pf = Path(env[var])
+        bases = (program_files() if program_files is not None
+                 else local_config.program_files_dirs(root))
+        for pf in map(Path, bases):
             for p in (pf / "OpenRV" / "bin", pf / "OpenRV*" / "bin",
                       pf / "Autodesk" / "RV*" / "bin", pf / "ShotGrid" / "RV*" / "bin",
                       pf / "Shotgun" / "RV*" / "bin"):
@@ -195,14 +201,6 @@ def _pair_in(folder, platform=None):
     return (rv, push) if rv and push else None
 
 
-def _home_bin(rv_home, platform=None):
-    """Bin folder under an RV install root (an .app bundle on macOS)."""
-    h = Path(rv_home)
-    if h.suffix == ".app":
-        return h / "Contents" / "MacOS"
-    return h / "bin"
-
-
 def registry_rv():
     """rv.exe from the Windows "App Paths" key that RV's .reg files register, else None."""
     try:
@@ -221,57 +219,92 @@ def registry_rv():
     return None
 
 
-def candidates(rv_bin=None, env=None, platform=None, home=None, root="/", registry=None):
-    """[(source, folder)] in lookup order; explicit sources come first.
+EXPLICIT_SOURCES = ("--rv-bin", "config")
 
-    registry: callable returning the registered rv.exe path (default: registry_rv on Windows).
+
+def iter_candidates(rv_bin=None, config=None, platform=None, home=None, root="/",
+                    registry=None, which=None, cwd=None, program_files=None):
+    """(source, folder) in lookup order, lazily; explicit sources come first. The config file
+    is read only when --rv-bin did not answer.
+
+    config: settings dict (default: the config file); registry: callable returning the
+    registered rv.exe path (default: registry_rv on Windows); which: shutil.which stand-in;
+    cwd: where the OpenRV build search starts (default: the current folder).
     """
-    env = os.environ if env is None else env
     kind = _os_kind(platform)
-    out = []
+    which = which or shutil.which
     if rv_bin:
-        out.append(("--rv-bin", Path(rv_bin)))
-    if env.get("RV_BIN"):
-        out.append(("RV_BIN", Path(env["RV_BIN"])))
-    for var in ("RVPUSH_RV_EXECUTABLE_PATH", "RV_PATH", "RV_APP_RV"):   # each names rv itself
-        exe = env.get(var, "")
-        if exe and exe.lower() != "none":
-            out.append((var, Path(exe).parent))
-    if env.get("RV_HOME"):
-        out.append(("RV_HOME", _home_bin(env["RV_HOME"], platform)))
+        yield "--rv-bin", Path(rv_bin)
+    if config is None:
+        config = local_config.load_config(home)
+    configured = local_config.config_value(config, "rv_bin", home)
+    if configured:
+        yield "config", Path(configured)
     for n in exe_names(platform)[0]:
-        hit = shutil.which(n, path=env.get("PATH", ""))
+        hit = which(n)
         if hit:
-            out.append(("PATH", Path(hit).parent))
+            yield "PATH", Path(hit).parent
             break
     if kind == "windows":
         reg = (registry or registry_rv)()
         if reg:
-            out.append(("registry", Path(reg).parent))
-    for pat in install_patterns(platform, env, home, root):
+            yield "registry", Path(reg).parent
+    for pat in install_patterns(platform, home, root, program_files):
         for hit in sorted(glob.glob(pat), key=_natural_key, reverse=True):
-            out.append(("install folder", Path(hit)))
+            yield "install folder", Path(hit)
+    build = local_config.openrv_build_dir(platform, home, root, cwd)
+    if build:
+        yield "OpenRV build", build
+
+
+def candidates(rv_bin=None, config=None, platform=None, home=None, root="/", registry=None,
+               which=None, cwd=None, program_files=None):
+    """[(source, folder)] in lookup order (see iter_candidates)."""
+    return list(iter_candidates(rv_bin, config, platform, home, root, registry, which, cwd,
+                                program_files))
+
+
+def _bin_folders(folder):
+    """Folders to try for one candidate: the folder (or a file's folder), an .app bundle's
+    Contents/MacOS, and an install root's bin."""
+    folder = Path(folder)
+    if folder.is_file():
+        return [folder.parent]
+    out = [folder]
+    if folder.suffix == ".app" or (folder / "Contents" / "MacOS").is_dir():
+        out.append(folder / "Contents" / "MacOS")
+    out.append(folder / "bin")
     return out
 
 
-def find_rv(rv_bin=None, env=None, platform=None, home=None, root="/", registry=None):
-    """(rv, rvpush) paths. An explicit --rv-bin or RV_BIN that is wrong is an error, not skipped."""
+def find_rv(rv_bin=None, config=None, platform=None, home=None, root="/", registry=None,
+            which=None, cwd=None, program_files=None):
+    """(rv, rvpush) paths. An explicit --rv-bin or config rv_bin that is wrong is an error,
+    not skipped, and so is a broken config file."""
     if home is None:
         home = Path.home()
-    for source, folder in candidates(rv_bin, env, platform, home, root, registry):
-        folder = folder.parent if folder.is_file() else folder
-        pair = _pair_in(folder, platform)
-        if pair:
-            return pair
-        if source in ("--rv-bin", "RV_BIN"):
-            rv_names, push_names = exe_names(platform)
-            raise RvError(f"{source} is {folder}, but it does not hold both {rv_names[0]} and "
-                          f"{push_names[0]}. Point it at the RV bin folder (<install>/bin, or "
-                          f"RV.app/Contents/MacOS on macOS).")
-    raise RvError("RV not found: tried --rv-bin, RV_BIN, RVPUSH_RV_EXECUTABLE_PATH, RV_PATH, "
-                  "RV_APP_RV, RV_HOME, PATH, the Windows registry and the usual install folders. "
-                  "Install RV or OpenRV, or pass --rv-bin <folder with rv and rvpush>, or set "
-                  "RV_BIN to that folder.")
+    config_file = local_config.config_path(home)
+    try:
+        for source, folder in iter_candidates(rv_bin, config, platform, home, root, registry,
+                                              which, cwd, program_files):
+            folders = _bin_folders(folder) if source in EXPLICIT_SOURCES else [folder]
+            for f in folders:
+                pair = _pair_in(f, platform)
+                if pair:
+                    return pair
+            if source in EXPLICIT_SOURCES:
+                rv_names, push_names = exe_names(platform)
+                where = "--rv-bin" if source == "--rv-bin" else f"rv_bin in {config_file}"
+                raise RvError(f"{where} is {folder}, but it does not hold both {rv_names[0]} "
+                              f"and {push_names[0]}. Point it at the RV bin folder "
+                              f"(<install>/bin, or RV.app/Contents/MacOS on macOS).")
+    except local_config.ConfigError as exc:
+        raise RvError(f"config file problem: {exc}") from None
+    raise RvError(f"RV not found: tried --rv-bin, rv_bin in {config_file}, PATH, the Windows "
+                  f"registry, the usual install folders and an OpenRV build (~/OpenRV or a "
+                  f"folder above this one holding {local_config.OPENRV_MARKER}). Install RV or "
+                  f"OpenRV, or pass --rv-bin <folder with rv and rvpush>, or put that folder "
+                  f"in the config file as \"rv_bin\".")
 
 
 # --- sources ----------------------------------------------------------------------------
@@ -612,16 +645,92 @@ def launch_args(rv, tokens, tag, latlong=False):
     return [str(rv), *extra, "-network", "-networkTag", tag, *tokens]
 
 
-def rvpush_args(rvpush, tag, *args):
-    return [str(rvpush), "-tag", tag, *args]
+ENV_PROGRAM = "/usr/bin/env"            # macOS and Linux: sets one variable for rvpush
+RVPUSH_NO_LAUNCH = "RVPUSH_RV_EXECUTABLE_PATH=none"
 
 
-def child_env(env=None):
-    """Environment for rvpush: never let it start an RV of its own, which would be tied to
-    this process and could die with it."""
-    e = dict(os.environ if env is None else env)
-    e["RVPUSH_RV_EXECUTABLE_PATH"] = "none"
-    return e
+def rvpush_args(rvpush, tag, *args, platform=None, env_program=ENV_PROGRAM):
+    """rvpush's command line. On macOS and Linux it runs under /usr/bin/env with
+    RVPUSH_RV_EXECUTABLE_PATH=none, so rvpush can never start an RV of its own (one tied to
+    this process, with the pushed code as its start-up script); the rest of the environment is
+    inherited as usual. Windows has no such program: there the live-RV guard in _rvpush is
+    the only protection."""
+    cmd = [str(rvpush), "-tag", tag, *args]
+    if _os_kind(platform) != "windows" and Path(env_program).is_file():
+        return [env_program, RVPUSH_NO_LAUNCH] + cmd
+    return cmd
+
+
+def rv_port_dir():
+    """Where RV writes its network port files: <system temp>/tweak_rv_proc (OpenRV
+    RvNetworkDialog::savePortNumber; rvpush reads the same folder)."""
+    import tempfile
+    return Path(tempfile.gettempdir()) / "tweak_rv_proc"
+
+
+def _pid_alive_windows(pid):
+    import ctypes
+    from ctypes import wintypes
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    handle = kernel32.OpenProcess(0x1000, False, pid)     # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return ctypes.get_last_error() == 5                 # access denied: it exists
+    try:
+        code = wintypes.DWORD()
+        ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        return bool(ok) and code.value == 259               # STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def pid_alive(pid):
+    """True when a process with this id is running. Never signals it (os.kill with 0 would
+    end the process on Windows, so Windows asks OpenProcess instead)."""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        try:
+            return _pid_alive_windows(pid)
+        except (OSError, AttributeError):
+            return True         # cannot tell: let rvpush try, as before this guard existed
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def live_rv_pids(tag, folder=None, alive=pid_alive):
+    """Process ids of RVs listening under `tag`: port files <pid>_<tag> (RV writes <pid>_
+    without a tag) in folder (default rv_port_dir()) that hold a port number and whose process
+    is alive. A crashed RV leaves its file behind; its dead pid is skipped."""
+    folder = rv_port_dir() if folder is None else Path(folder)
+    try:
+        entries = list(folder.iterdir())
+    except OSError:
+        return []
+    pids = []
+    for f in entries:
+        parts = f.name.split("_")
+        if not parts[0].isdigit():
+            continue
+        # rvpush's own match: a bare <pid> for no tag, else everything after the first _
+        if not ((len(parts) == 1 and tag == "") or (len(parts) >= 2 and "_".join(parts[1:]) == tag)):
+            continue
+        try:
+            with open(f, "r", encoding="ascii", errors="replace") as fh:
+                port = fh.readline().strip()
+        except OSError:
+            continue
+        if port.isdigit() and int(port) > 0 and alive(int(parts[0])):
+            pids.append(int(parts[0]))
+    return pids
 
 
 STATE_KEYS = ("frame", "frameStart", "frameEnd", "marks", "sourceStarts", "sources",
@@ -919,20 +1028,20 @@ def own_log_path(tag):
     return Path(tempfile.gettempdir()) / f"rv-review-{safe}.log"
 
 
-def app_log_path(env=None, platform=None, home=None):
-    """OpenRV's own log file (OpenRV src/lib/base/TwkUtil/FileLogger.cpp): Windows
-    %APPDATA%/ASWF/OpenRV/OpenRV.log, macOS ~/Library/Logs/ASWF/OpenRV.log, Linux
-    ~/.local/share/ASWF/OpenRV/OpenRV.log. Every OpenRV window appends to it."""
-    env = os.environ if env is None else env
-    home = Path(home) if home else Path.home()
+def app_log_path(platform=None, home=None, roaming=None):
+    """OpenRV's own log file (OpenRV src/lib/base/TwkUtil/FileLogger.cpp; Qt's AppDataLocation
+    elsewhere than macOS): Windows <Roaming AppData>/ASWF/OpenRV/OpenRV.log, macOS
+    ~/Library/Logs/ASWF/OpenRV.log, Linux ~/.local/share/ASWF/OpenRV/OpenRV.log. Every OpenRV
+    window appends to it. roaming: the Windows Roaming AppData folder (default: the known
+    folder, else ~/AppData/Roaming)."""
     kind = _os_kind(platform)
     if kind == "windows":
-        base = env.get("APPDATA")
-        return Path(base) / "ASWF" / "OpenRV" / "OpenRV.log" if base else None
+        base = Path(roaming) if roaming else local_config.roaming_appdata(home)
+        return base / "ASWF" / "OpenRV" / "OpenRV.log"
+    home = Path(home) if home else Path.home()
     if kind == "macos":
         return home / "Library" / "Logs" / "ASWF" / "OpenRV.log"
-    xdg = env.get("XDG_DATA_HOME")
-    return (Path(xdg) if xdg else home / ".local" / "share") / "ASWF" / "OpenRV" / "OpenRV.log"
+    return home / ".local" / "share" / "ASWF" / "OpenRV" / "OpenRV.log"
 
 
 class LogWatch:
@@ -968,10 +1077,17 @@ class LogWatch:
 
 # --- talking to RV ----------------------------------------------------------------------
 
+NO_RV_EXIT = 11           # rvpush's own code for "cannot connect to any running RV"
+
+
 def _rvpush(rvpush, tag, *args):
+    """(exit code, output) of one rvpush command. When no live RV holds the tag, rvpush is not
+    run at all and the result is rvpush's own "not connected" code, 11."""
+    if not live_rv_pids(tag):
+        return NO_RV_EXIT, f"no running RV with tag '{tag}'"
     try:
         # rvpush prints what RV returns as UTF-8 on every platform
-        r = subprocess.run(rvpush_args(rvpush, tag, *args), env=child_env(),
+        r = subprocess.run(rvpush_args(rvpush, tag, *args), stdin=subprocess.DEVNULL,
                            capture_output=True, text=True, encoding="utf-8", errors="replace",
                            timeout=RVPUSH_TIMEOUT_S)
     except subprocess.TimeoutExpired:
@@ -1597,6 +1713,7 @@ def build_parser():
                "  python rv_review.py pano_latlong.exr --latlong\n"
                "  python rv_review.py --notes --export-annotated review/notes\n"
                "  python rv_review.py --state\n"
+               "  python rv_review.py --push py-eval-return 'rv.commands.frame()'\n"
                "  python rv_review.py --selftest")
     ap.add_argument("sources", nargs="*", metavar="SOURCE",
                     help="stills, movies, sequence specs, [ ... ] groups or one .rv session, "
@@ -1643,12 +1760,45 @@ def build_parser():
                     help="turn on RV's info strip (F7); RV then saves it as on in its preferences")
     ap.add_argument("--state", action="store_true",
                     help="load nothing; print the review window's state and item mapping")
+    ap.add_argument("--push", nargs=argparse.REMAINDER, metavar="COMMAND ARG",
+                    help="load nothing; send one rvpush command (" + ", ".join(PUSH_COMMANDS) +
+                         ") and its arguments to the review window, only when that RV is "
+                         "running, and print rvpush's output as \"output\"; must come last")
     ap.add_argument("--selftest", action="store_true",
                     help="load nothing; send Right, Left, Alt+Right and Alt+Left to the review "
                          "window through RV's event tables, check that each moves the frame as "
                          "the key table says, then go back to the starting frame (needs a "
                          "review with 2+ frames; no keyboard focus or accessibility permission)")
     return ap
+
+
+PUSH_COMMANDS = ("set", "merge", "mu-eval", "mu-eval-return", "py-eval", "py-eval-return",
+                 "py-exec", "url")
+
+
+def push_body(rvpush, tag, words):
+    """--push: one guarded rvpush command. py-exec exits 0 even when the Python raises, so
+    read the state back afterwards (py-eval-return)."""
+    if not words or words[0] not in PUSH_COMMANDS:
+        raise RvError("--push needs an rvpush command first: " + ", ".join(PUSH_COMMANDS) + ".")
+    if not live_rv_pids(tag):
+        raise RvError(f"no RV with tag '{tag}' is running, so nothing was sent (rvpush was not "
+                      f"run, and no RV was started). Load sources with this script first, or "
+                      f"pass the --tag the review window was started with.")
+    code, out = _rvpush(rvpush, tag, *words)
+    body = {"action": "push", "tag": tag, "command": list(words), "rvpush_exit": code,
+            "output": out}
+    if code != 0:
+        raise PushFailed(body, f"rvpush {words[0]} exited {code}: {out[-400:]}")
+    return body
+
+
+class PushFailed(RvError):
+    """rvpush ran and failed; carries the result body."""
+
+    def __init__(self, body, message):
+        super().__init__(message)
+        self.body = body
 
 
 def _state_body(rvpush, tag):
@@ -1669,6 +1819,9 @@ def main(argv=None):
         if a.export_annotated and not a.notes:
             raise RvError("--export-annotated goes with --notes.")
         rv, rvpush = find_rv(a.rv_bin)
+        if a.push is not None:
+            print(json.dumps(envelope(push_body(rvpush, a.tag, a.push))))
+            return EXIT_OK
         if a.state:
             print(json.dumps(envelope(_state_body(rvpush, a.tag))))
             return EXIT_OK
@@ -1711,7 +1864,8 @@ def main(argv=None):
                         manifest, a.save_session, not a.no_decode_check)
     except RvError as e:
         print(f"rv_review: {e}", file=sys.stderr)
-        print(json.dumps(envelope({"action": "error"}, EXIT_ERROR, str(e))))
+        body = getattr(e, "body", None) or {"action": "error"}
+        print(json.dumps(envelope(body, EXIT_ERROR, str(e))))
         return EXIT_ERROR
     code = EXIT_OK if result["ok"] else EXIT_MISMATCH
     print(json.dumps(envelope(result, code)))

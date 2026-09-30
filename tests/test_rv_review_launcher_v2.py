@@ -141,31 +141,25 @@ def test_own_log_path_default_tag(rr):
     assert rr.own_log_path(rr.DEFAULT_TAG).name == "rv-review-rv-review.log"
 
 
-def test_app_log_path_windows_uses_appdata(tmp_path, rr):
-    got = rr.app_log_path(env={"APPDATA": str(tmp_path / "roaming")}, platform=WIN,
-                          home=tmp_path / "home")
+def test_app_log_path_windows_uses_roaming_appdata(tmp_path, rr):
+    got = rr.app_log_path(platform=WIN, roaming=tmp_path / "roaming")
     assert got == tmp_path / "roaming" / "ASWF" / "OpenRV" / "OpenRV.log"
 
 
-def test_app_log_path_windows_without_appdata_is_none(tmp_path, rr):
-    assert rr.app_log_path(env={}, platform=WIN, home=tmp_path / "home") is None
+def test_app_log_path_windows_default_is_under_the_home_folder(tmp_path, rr):
+    got = rr.app_log_path(platform=WIN, home=tmp_path / "home")
+    assert got == tmp_path / "home" / "AppData" / "Roaming" / "ASWF" / "OpenRV" / "OpenRV.log"
 
 
 def test_app_log_path_macos(tmp_path, rr):
     home = tmp_path / "home"
-    got = rr.app_log_path(env={"XDG_DATA_HOME": str(tmp_path / "xdg")}, platform=MAC, home=home)
+    got = rr.app_log_path(platform=MAC, home=home)
     assert got == home / "Library" / "Logs" / "ASWF" / "OpenRV.log"
 
 
-def test_app_log_path_linux_respects_xdg_data_home(tmp_path, rr):
-    got = rr.app_log_path(env={"XDG_DATA_HOME": str(tmp_path / "xdg")}, platform=LINUX,
-                          home=tmp_path / "home")
-    assert got == tmp_path / "xdg" / "ASWF" / "OpenRV" / "OpenRV.log"
-
-
-def test_app_log_path_linux_default(tmp_path, rr):
+def test_app_log_path_linux(tmp_path, rr):
     home = tmp_path / "home"
-    got = rr.app_log_path(env={}, platform=LINUX, home=home)
+    got = rr.app_log_path(platform=LINUX, home=home)
     assert got == home / ".local" / "share" / "ASWF" / "OpenRV" / "OpenRV.log"
 
 

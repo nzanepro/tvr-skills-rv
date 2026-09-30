@@ -3,8 +3,8 @@
 Nothing here launches RV, calls rvpush, or talks to a network tag: review(),
 _load(), _rvpush(), _launch_detached(), read_state() and main() (other than
 via --help, or a --rv-bin error, through a subprocess) are never called.
-Every find_rv() test passes an explicit env/root/home so the real machine's
-own RV installs, PATH and registry cannot leak into the result.
+Every find_rv() test passes an explicit root, home, config, which, registry and cwd so the
+real machine's own RV installs, PATH and registry cannot leak into the result.
 """
 import json
 import os
@@ -51,31 +51,50 @@ def test_exe_names_linux(rr):
     assert rr.exe_names(LINUX) == (("rv",), ("rvpush",))
 
 
+def _which_in(folder):
+    """A shutil.which stand-in that finds names only in folder."""
+    folder = Path(folder)
+    return lambda name: str(folder / name) if (folder / name).is_file() else None
+
+
+def _where(tmp_path, **kw):
+    """find_rv keyword arguments that keep the real machine out: empty home and root, no
+    config, no PATH hits, no registry, no OpenRV checkout above the current folder."""
+    cwd = tmp_path / "cwd"
+    cwd.mkdir(exist_ok=True)
+    base = {"root": tmp_path, "home": tmp_path / "home", "registry": lambda: None,
+            "which": lambda name: None, "cwd": cwd, "config": {}}
+    base.update(kw)
+    return base
+
+
 # ---------------------------------------------------------------------------
 # install_patterns
 # ---------------------------------------------------------------------------
 
-def test_install_patterns_windows_uses_both_program_files_vars(tmp_path, rr):
+def test_install_patterns_windows_uses_every_program_files_folder(tmp_path, rr):
     pf1, pf2 = tmp_path / "pf1", tmp_path / "pf2"
-    pats = rr.install_patterns(WIN, env={"ProgramFiles": str(pf1), "ProgramW6432": str(pf2)},
-                               root=tmp_path)
-    assert any(str(pf1) in p for p in pats)
-    assert any(str(pf2) in p for p in pats)
+    pats = rr.install_patterns(WIN, root=tmp_path, program_files=lambda: [pf1, pf2])
     assert str(pf1 / "OpenRV" / "bin") in pats
     assert str(pf2 / "OpenRV" / "bin") in pats
 
 
+def test_install_patterns_windows_default_is_program_files_under_root(tmp_path, rr):
+    pats = rr.install_patterns(WIN, root=tmp_path)
+    assert str(tmp_path / "Program Files" / "OpenRV" / "bin") in pats
+    assert str(tmp_path / "Program Files (x86)" / "OpenRV" / "bin") in pats
+
+
 def test_install_patterns_windows_dedups_identical_folders(tmp_path, rr):
     pf = tmp_path / "pf"
-    pats = rr.install_patterns(WIN, env={"ProgramFiles": str(pf), "ProgramW6432": str(pf)},
-                               root=tmp_path)
+    pats = rr.install_patterns(WIN, root=tmp_path, program_files=lambda: [pf, pf])
     assert len(pats) == len(set(pats))
     assert pats.count(str(pf / "OpenRV" / "bin")) == 1
 
 
 def test_install_patterns_macos_includes_root_and_home_applications(tmp_path, rr):
     root, home = tmp_path / "root", tmp_path / "home"
-    pats = rr.install_patterns(MAC, env={}, home=home, root=root)
+    pats = rr.install_patterns(MAC, home=home, root=root)
     expected = [
         str(root / "Applications" / "RV*.app" / "Contents" / "MacOS"),
         str(root / "Applications" / "OpenRV*.app" / "Contents" / "MacOS"),
@@ -87,7 +106,7 @@ def test_install_patterns_macos_includes_root_and_home_applications(tmp_path, rr
 
 
 def test_install_patterns_linux_start_under_root(tmp_path, rr):
-    pats = rr.install_patterns(LINUX, env={}, root=tmp_path)
+    pats = rr.install_patterns(LINUX, root=tmp_path)
     assert pats
     assert all(p.startswith(str(tmp_path)) for p in pats)
 
@@ -96,103 +115,65 @@ def test_install_patterns_linux_start_under_root(tmp_path, rr):
 # find_rv: lookup order
 # ---------------------------------------------------------------------------
 
-def test_find_rv_rv_bin_beats_rv_bin_env(tmp_path, rr):
+def test_find_rv_rv_bin_beats_config(tmp_path, rr):
     winner = _make_pair(rr, tmp_path / "winner", LINUX)
     _make_pair(rr, tmp_path / "loser", LINUX)
-    result = rr.find_rv(rv_bin=str(tmp_path / "winner"),
-                        env={"RV_BIN": str(tmp_path / "loser")},
-                        platform=LINUX, root=tmp_path, home=tmp_path / "home",
-                        registry=lambda: None)
+    result = rr.find_rv(rv_bin=str(tmp_path / "winner"), platform=LINUX,
+                        **_where(tmp_path, config={"rv_bin": str(tmp_path / "loser")}))
     assert result == winner
 
 
-def test_find_rv_rv_bin_env_beats_rvpush_env(tmp_path, rr):
+def test_find_rv_config_beats_path(tmp_path, rr):
     winner = _make_pair(rr, tmp_path / "winner", LINUX)
-    loser_rv, _ = _make_pair(rr, tmp_path / "loser", LINUX)
-    result = rr.find_rv(env={"RV_BIN": str(tmp_path / "winner"),
-                             "RVPUSH_RV_EXECUTABLE_PATH": str(loser_rv)},
-                        platform=LINUX, root=tmp_path, home=tmp_path / "home",
-                        registry=lambda: None)
+    _make_pair(rr, tmp_path / "pathdir", LINUX)
+    result = rr.find_rv(platform=LINUX, **_where(
+        tmp_path, config={"rv_bin": str(tmp_path / "winner")},
+        which=_which_in(tmp_path / "pathdir")))
     assert result == winner
 
 
-@pytest.mark.parametrize("none_spelling", ["none", "None", "NONE"])
-def test_find_rv_rvpush_env_ignored_when_none(tmp_path, rr, none_spelling):
-    winner = _make_pair(rr, tmp_path / "winner", LINUX)
-    result = rr.find_rv(env={"RVPUSH_RV_EXECUTABLE_PATH": none_spelling,
-                             "RV_PATH": str(winner[0])},
-                        platform=LINUX, root=tmp_path, home=tmp_path / "home",
-                        registry=lambda: None)
-    assert result == winner
+def test_find_rv_reads_the_config_file_under_home(tmp_path, rr):
+    winner = _make_pair(rr, tmp_path / "home" / "rv" / "bin", LINUX)
+    kw = _where(tmp_path)
+    del kw["config"]
+    cfg = tmp_path / "home" / ".config" / "tvr-skills-rv" / "config.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(json.dumps({"rv_bin": "~/rv/bin"}), encoding="utf-8")
+    assert rr.find_rv(platform=LINUX, **kw) == winner
 
 
-def test_find_rv_rvpush_env_beats_rv_path_env(tmp_path, rr):
-    winner_rv, winner_push = _make_pair(rr, tmp_path / "winner", LINUX)
-    loser_rv, _ = _make_pair(rr, tmp_path / "loser", LINUX)
-    result = rr.find_rv(env={"RVPUSH_RV_EXECUTABLE_PATH": str(winner_rv),
-                             "RV_PATH": str(loser_rv)},
-                        platform=LINUX, root=tmp_path, home=tmp_path / "home",
-                        registry=lambda: None)
-    assert result == (winner_rv, winner_push)
+def test_find_rv_broken_config_file_is_an_error(tmp_path, rr):
+    kw = _where(tmp_path)
+    del kw["config"]
+    cfg = tmp_path / "home" / ".config" / "tvr-skills-rv" / "config.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text("{oops", encoding="utf-8")
+    with pytest.raises(rr.RvError, match="config file problem"):
+        rr.find_rv(platform=LINUX, **kw)
 
 
-def test_find_rv_rv_path_env_beats_rv_app_env(tmp_path, rr):
-    winner_rv, winner_push = _make_pair(rr, tmp_path / "winner", LINUX)
-    loser_rv, _ = _make_pair(rr, tmp_path / "loser", LINUX)
-    result = rr.find_rv(env={"RV_PATH": str(winner_rv), "RV_APP_RV": str(loser_rv)},
-                        platform=LINUX, root=tmp_path, home=tmp_path / "home",
-                        registry=lambda: None)
-    assert result == (winner_rv, winner_push)
-
-
-def test_find_rv_rv_app_env_beats_rv_home(tmp_path, rr):
-    winner_rv, winner_push = _make_pair(rr, tmp_path / "winner", LINUX)
-    loser_home = tmp_path / "loser_home"
-    _make_pair(rr, loser_home / "bin", LINUX)
-    result = rr.find_rv(env={"RV_APP_RV": str(winner_rv), "RV_HOME": str(loser_home)},
-                        platform=LINUX, root=tmp_path, home=tmp_path / "home",
-                        registry=lambda: None)
-    assert result == (winner_rv, winner_push)
-
-
-def test_find_rv_rv_home_uses_bin_subfolder(tmp_path, rr):
+def test_find_rv_config_install_root_uses_bin_subfolder(tmp_path, rr):
     home_root = tmp_path / "rvhome"
     winner = _make_pair(rr, home_root / "bin", LINUX)
-    result = rr.find_rv(env={"RV_HOME": str(home_root)}, platform=LINUX, root=tmp_path,
-                        home=tmp_path / "home", registry=lambda: None)
+    result = rr.find_rv(platform=LINUX, **_where(tmp_path, config={"rv_bin": str(home_root)}))
     assert result == winner
 
 
-def test_find_rv_rv_home_app_bundle_uses_contents_macos(tmp_path, rr):
-    home_root = tmp_path / "RV.app"
-    winner = _make_pair(rr, home_root / "Contents" / "MacOS", MAC)
-    result = rr.find_rv(env={"RV_HOME": str(home_root)}, platform=MAC, root=tmp_path,
-                        home=tmp_path / "home", registry=lambda: None)
+def test_find_rv_config_app_bundle_uses_contents_macos(tmp_path, rr):
+    app = tmp_path / "RV.app"
+    winner = _make_pair(rr, app / "Contents" / "MacOS", MAC)
+    result = rr.find_rv(platform=MAC, **_where(tmp_path, config={"rv_bin": str(app)}))
     assert result == winner
 
 
-def test_find_rv_rv_home_beats_path(tmp_path, rr):
-    winner = _make_pair(rr, tmp_path / "rvhome" / "bin", LINUX)
-    loser_path_dir = tmp_path / "pathdir"
-    _make_pair(rr, loser_path_dir, LINUX, executable=True)
-    result = rr.find_rv(env={"RV_HOME": str(tmp_path / "rvhome"), "PATH": str(loser_path_dir)},
-                        platform=LINUX, root=tmp_path, home=tmp_path / "home",
-                        registry=lambda: None)
-    assert result == winner
-
-
-def test_find_rv_via_path_native_platform(tmp_path):
-    """PATH lookup uses shutil.which, so it must run under the real sys.platform."""
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("rv_review", RV_REVIEW_SCRIPT)
-    rr = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(rr)
-
+def test_find_rv_via_real_shutil_which(tmp_path, rr, monkeypatch):
+    """Without an injected which, PATH is searched by shutil.which itself."""
     path_dir = tmp_path / "pathdir"
     winner = _make_pair(rr, path_dir, sys.platform, executable=True)
-    result = rr.find_rv(env={"PATH": str(path_dir)}, root=tmp_path, home=tmp_path / "home",
-                        registry=lambda: None)
-    assert result == winner
+    monkeypatch.setattr(rr.shutil, "which", _which_in(path_dir))
+    kw = _where(tmp_path)
+    del kw["which"]
+    assert rr.find_rv(**kw) == winner
 
 
 def test_find_rv_path_beats_registry(tmp_path, rr):
@@ -200,19 +181,17 @@ def test_find_rv_path_beats_registry(tmp_path, rr):
     winner = _make_pair(rr, path_dir, WIN, executable=True)
     registry_dir = tmp_path / "registry_install"
     _make_pair(rr, registry_dir, WIN)
-    result = rr.find_rv(env={"PATH": str(path_dir), "ProgramFiles": str(tmp_path / "pf")},
-                        platform=WIN, root=tmp_path, home=tmp_path / "home",
-                        registry=lambda: str(registry_dir / "rv.exe"))
+    result = rr.find_rv(platform=WIN, **_where(
+        tmp_path, which=_which_in(path_dir), registry=lambda: str(registry_dir / "rv.exe")))
     assert result == winner
 
 
 def test_find_rv_registry_beats_install_folders(tmp_path, rr):
     registry_dir = tmp_path / "registry_install"
     winner = _make_pair(rr, registry_dir, WIN)
-    pf = tmp_path / "pf"
-    _make_pair(rr, pf / "OpenRV" / "bin", WIN)
-    result = rr.find_rv(env={"ProgramFiles": str(pf)}, platform=WIN, root=tmp_path,
-                        home=tmp_path / "home", registry=lambda: str(registry_dir / "rv.exe"))
+    _make_pair(rr, tmp_path / "Program Files" / "OpenRV" / "bin", WIN)
+    result = rr.find_rv(platform=WIN, **_where(
+        tmp_path, registry=lambda: str(registry_dir / "rv.exe")))
     assert result == winner
 
 
@@ -220,24 +199,42 @@ def test_find_rv_registry_not_consulted_on_linux(tmp_path, rr):
     registry_dir = tmp_path / "registry_install"
     _make_pair(rr, registry_dir, LINUX)
     with pytest.raises(rr.RvError):
-        rr.find_rv(env={}, platform=LINUX, root=tmp_path, home=tmp_path / "home",
-                   registry=lambda: str(registry_dir / "rv"))
+        rr.find_rv(platform=LINUX, **_where(tmp_path, registry=lambda: str(registry_dir / "rv")))
 
 
 def test_find_rv_install_folders_pick_newest_version_by_natural_sort(tmp_path, rr):
     pf = tmp_path / "pf"
     older = _make_pair(rr, pf / "OpenRV-2024.9" / "bin", WIN)
     newer = _make_pair(rr, pf / "OpenRV-2024.10" / "bin", WIN)
-    result = rr.find_rv(env={"ProgramFiles": str(pf)}, platform=WIN, root=tmp_path,
-                        home=tmp_path / "home", registry=lambda: None)
+    result = rr.find_rv(platform=WIN, **_where(tmp_path, program_files=lambda: [pf]))
     assert result == newer
     assert result != older
 
 
+def test_find_rv_install_folder_beats_openrv_build(tmp_path, rr):
+    (tmp_path / "home" / "OpenRV").mkdir(parents=True)
+    (tmp_path / "home" / "OpenRV" / "rvcmds.sh").write_text("")
+    _make_pair(rr, tmp_path / "home" / "OpenRV" / "_build" / "stage" / "app" / "bin", LINUX)
+    winner = _make_pair(rr, tmp_path / "opt" / "OpenRV-3.1" / "bin", LINUX)
+    assert rr.find_rv(platform=LINUX, **_where(tmp_path)) == winner
+
+
+@pytest.mark.parametrize("plat,parts", [
+    (MAC, ("RV.app", "Contents", "MacOS")),
+    (LINUX, ("bin",)),
+    (WIN, ("bin",)),
+])
+def test_find_rv_openrv_build_from_source(tmp_path, rr, plat, parts):
+    checkout = tmp_path / "work" / "OpenRV"
+    (checkout / "src").mkdir(parents=True)
+    (checkout / "rvcmds.sh").write_text("")
+    winner = _make_pair(rr, checkout.joinpath("_build", "stage", "app", *parts), plat)
+    assert rr.find_rv(platform=plat, **_where(tmp_path, cwd=checkout / "src")) == winner
+
+
 def test_find_rv_rv_bin_as_the_executable_file_itself(tmp_path, rr):
     rv, push = _make_pair(rr, tmp_path / "install", LINUX)
-    result = rr.find_rv(rv_bin=str(rv), env={}, platform=LINUX, root=tmp_path,
-                        home=tmp_path / "home", registry=lambda: None)
+    result = rr.find_rv(rv_bin=str(rv), platform=LINUX, **_where(tmp_path))
     assert result == (rv, push)
 
 
@@ -247,24 +244,24 @@ def test_find_rv_wrong_rv_bin_raises_and_does_not_fall_through(tmp_path, rr):
     valid_path_dir = tmp_path / "pathdir"
     _make_pair(rr, valid_path_dir, LINUX, executable=True)
     with pytest.raises(rr.RvError, match="does not hold both"):
-        rr.find_rv(rv_bin=str(empty_dir), env={"PATH": str(valid_path_dir)}, platform=LINUX,
-                   root=tmp_path, home=tmp_path / "home", registry=lambda: None)
+        rr.find_rv(rv_bin=str(empty_dir), platform=LINUX,
+                   **_where(tmp_path, which=_which_in(valid_path_dir)))
 
 
-def test_find_rv_wrong_rv_bin_env_raises_and_does_not_fall_through(tmp_path, rr):
+def test_find_rv_wrong_config_rv_bin_raises_and_does_not_fall_through(tmp_path, rr):
     empty_dir = tmp_path / "empty"
     empty_dir.mkdir()
     valid_path_dir = tmp_path / "pathdir"
     _make_pair(rr, valid_path_dir, LINUX, executable=True)
     with pytest.raises(rr.RvError, match="does not hold both"):
-        rr.find_rv(env={"RV_BIN": str(empty_dir), "PATH": str(valid_path_dir)}, platform=LINUX,
-                   root=tmp_path, home=tmp_path / "home", registry=lambda: None)
+        rr.find_rv(platform=LINUX, **_where(tmp_path, config={"rv_bin": str(empty_dir)},
+                                             which=_which_in(valid_path_dir)))
 
 
 def test_find_rv_nothing_found_raises(tmp_path, rr):
-    with pytest.raises(rr.RvError, match="RV not found"):
-        rr.find_rv(env={}, platform=LINUX, root=tmp_path, home=tmp_path / "home",
-                   registry=lambda: None)
+    with pytest.raises(rr.RvError, match="RV not found") as exc:
+        rr.find_rv(platform=LINUX, **_where(tmp_path))
+    assert "config.json" in str(exc.value) and "OpenRV build" in str(exc.value)
 
 
 # ---------------------------------------------------------------------------
@@ -560,15 +557,125 @@ def test_launch_args_latlong_flags_come_before_network(rr):
 
 
 # ---------------------------------------------------------------------------
-# child_env
+# rvpush: command line and the live-RV guard
 # ---------------------------------------------------------------------------
 
-def test_child_env_disables_rvpush_launching_and_does_not_mutate_input(rr):
-    original = {"PATH": "somewhere"}
-    result = rr.child_env(original)
-    assert result["RVPUSH_RV_EXECUTABLE_PATH"] == "none"
-    assert result["PATH"] == "somewhere"
-    assert "RVPUSH_RV_EXECUTABLE_PATH" not in original
+def test_rvpush_args_on_posix_run_under_env_with_no_launch(tmp_path, rr):
+    env_program = tmp_path / "env"
+    env_program.write_text("")
+    args = rr.rvpush_args("rvpush", "t", "py-exec", "x", platform=LINUX,
+                          env_program=str(env_program))
+    assert args == [str(env_program), "RVPUSH_RV_EXECUTABLE_PATH=none",
+                    "rvpush", "-tag", "t", "py-exec", "x"]
+
+
+def test_rvpush_args_on_windows_are_plain(rr):
+    assert rr.rvpush_args("rvpush.exe", "t", "set", "a.exr", platform=WIN) == \
+        ["rvpush.exe", "-tag", "t", "set", "a.exr"]
+
+
+def test_rvpush_args_without_env_program_are_plain(tmp_path, rr):
+    assert rr.rvpush_args("rvpush", "t", "set", platform=LINUX,
+                          env_program=str(tmp_path / "missing")) == ["rvpush", "-tag", "t", "set"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="/usr/bin/env is macOS and Linux")
+def test_default_env_program_exists_here(rr):
+    assert Path(rr.ENV_PROGRAM).is_file()
+
+
+def _port_file(folder, name, port="45124"):
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / name).write_text(port + "\n")
+
+
+def test_live_rv_pids_matches_tag_port_and_live_pid(tmp_path, rr):
+    d = tmp_path / "tweak_rv_proc"
+    _port_file(d, "100_rv-review")
+    _port_file(d, "101_rv-review")               # dead
+    _port_file(d, "102_other")                   # other tag
+    _port_file(d, "103_rv-review", port="")      # no port
+    _port_file(d, "104_")                        # untagged
+    _port_file(d, "notapid_rv-review")
+    alive = {100, 102, 103, 104}.__contains__
+    assert rr.live_rv_pids("rv-review", d, alive) == [100]
+    assert rr.live_rv_pids("", d, alive) == [104]   # "104_": RV's untagged file, as rvpush reads it
+    assert rr.live_rv_pids("other", d, alive) == [102]
+
+
+def test_live_rv_pids_tag_with_underscore(tmp_path, rr):
+    d = tmp_path / "p"
+    _port_file(d, "7_my_tag")
+    assert rr.live_rv_pids("my_tag", d, lambda pid: True) == [7]
+
+
+def test_live_rv_pids_missing_folder_is_empty(tmp_path, rr):
+    assert rr.live_rv_pids("rv-review", tmp_path / "missing", lambda pid: True) == []
+
+
+def test_pid_alive_for_this_process_and_a_dead_one(rr):
+    assert rr.pid_alive(os.getpid())
+    assert not rr.pid_alive(0)
+    p = subprocess.Popen([sys.executable, "-c", "pass"])
+    p.wait()
+    assert not rr.pid_alive(p.pid) or os.name == "nt"
+
+
+def test_rv_port_dir_is_under_the_system_temp_folder(rr):
+    import tempfile
+    assert rr.rv_port_dir() == Path(tempfile.gettempdir()) / "tweak_rv_proc"
+
+
+def test_rvpush_is_not_run_without_a_live_rv(rr, monkeypatch):
+    monkeypatch.setattr(rr, "live_rv_pids", lambda tag: [])
+
+    def boom(*a, **k):
+        raise AssertionError("rvpush must not run")
+    monkeypatch.setattr(rr.subprocess, "run", boom)
+    assert rr._rvpush("rvpush", "t", "set", "a.exr") == (11, "no running RV with tag 't'")
+
+
+def test_rvpush_runs_with_the_guarded_command_line(rr, monkeypatch):
+    monkeypatch.setattr(rr, "live_rv_pids", lambda tag: [5])
+    seen = {}
+
+    class Done:
+        returncode, stdout, stderr = 0, "7\n", ""
+
+    def fake_run(args, **kw):
+        seen["args"], seen["kw"] = args, kw
+        return Done()
+    monkeypatch.setattr(rr.subprocess, "run", fake_run)
+    assert rr._rvpush("rvpush", "t", "py-eval-return", "1") == (0, "7")
+    assert seen["args"][-5:] == ["rvpush", "-tag", "t", "py-eval-return", "1"]
+    assert "env" not in seen["kw"]
+
+
+def test_push_body_needs_a_command_and_a_live_rv(rr, monkeypatch):
+    with pytest.raises(rr.RvError, match="rvpush command"):
+        rr.push_body("rvpush", "t", ["bogus"])
+    monkeypatch.setattr(rr, "live_rv_pids", lambda tag: [])
+    with pytest.raises(rr.RvError, match="nothing was sent"):
+        rr.push_body("rvpush", "t", ["py-exec", "x"])
+
+
+def test_push_body_reports_output_and_failure(rr, monkeypatch):
+    monkeypatch.setattr(rr, "live_rv_pids", lambda tag: [5])
+    monkeypatch.setattr(rr, "_rvpush", lambda rvpush, tag, *a: (0, "12"))
+    body = rr.push_body("rvpush", "t", ["py-eval-return", "rv.commands.frame()"])
+    assert body["output"] == "12" and body["command"][0] == "py-eval-return"
+    monkeypatch.setattr(rr, "_rvpush", lambda rvpush, tag, *a: (4, "lost"))
+    with pytest.raises(rr.PushFailed) as exc:
+        rr.push_body("rvpush", "t", ["set", "a.exr"])
+    assert exc.value.body["rvpush_exit"] == 4
+
+
+def test_cli_push_without_live_rv_prints_one_json_error(rr, monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(rr, "find_rv", lambda *a, **k: ("rv", "rvpush"))
+    monkeypatch.setattr(rr, "live_rv_pids", lambda tag: [])
+    code = rr.main(["--tag", "t", "--push", "py-exec", "rv.commands.play()"])
+    res = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert code == 1 and res["ok"] is False and "nothing was sent" in res["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -644,7 +751,7 @@ def test_cli_help_exits_0_and_documents_key_options():
     assert result.returncode == 0
     out = result.stdout
     for text in ("--frames-json", "--compare", "--views", "--stereo", "--latlong",
-                 "--state", "RV_BIN"):
+                 "--state", "--push", "config.json"):
         assert text in out
 
 
