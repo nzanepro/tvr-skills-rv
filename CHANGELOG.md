@@ -9,6 +9,27 @@ own version, `metadata.version` in its `SKILL.md`, which changes only when that 
 so a skill's version can be lower than the plugin's; each release's "Versions" line lists the
 skill versions it changed.
 
+## [0.2.3] - 2026-09-29
+
+Packaging and documentation only; no skill changed.
+
+### Added
+
+- `.claude-plugin/plugin.json`, the plugin's own manifest (name, version, description, author, homepage, repository, license, keywords and the four skill folders), which Anthropic's plugin directory requires. The marketplace entry now defers to it and keeps only its name, source, description, category and tags. Install and skill names are unchanged: `rv@tvr-skills-rv`, `/rv:rv-review`, `/rv:rvio`, `/rv:rvls`, `/rv:rvpkg`.
+- Releases are published by `.github/workflows/release.yml` when a `v*` tag is pushed: `scripts/build_release.py` builds the per-skill zips from the tagged commit (LF line endings) and the release notes from this changelog.
+- `scripts/check_repo.py` checks that every `SKILL.md` frontmatter is valid YAML (for example, no unquoted value containing `: `), that `plugin.json`, the marketplace file and this changelog agree on the version, and that the marketplace entry and `plugin.json` do not conflict. The tests also parse each frontmatter with PyYAML and strictyaml.
+- A code of conduct (Contributor Covenant 3.0), with reports through GitHub's reporting tools.
+
+### Fixed
+
+- The issue chooser linked to GitHub Discussions, which is not enabled. The link is gone, and `SECURITY.md` links straight to GitHub's private "Report a vulnerability" form.
+- The README said to update the marketplace and then reinstall. An installed plugin updates with `claude plugin update rv@tvr-skills-rv` in a shell or **Update now** in `/plugin`; the README also gives the one-command `/plugin install rv --marketplace nzanepro/tvr-skills-rv` (Claude Code v2.1.275 or later).
+- This changelog's header said every version matched each skill's `metadata.version`. It now describes the scheme: the plugin version numbers releases, and a skill's version changes only when that skill does.
+
+### Changed
+
+- Versions: plugin 0.2.3. Skills unchanged: rv-review 0.2.2; rvio, rvls and rvpkg 0.1.1.
+
 ## [0.2.2] - 2026-09-26
 
 ### Fixed
@@ -103,6 +124,7 @@ skill versions it changed.
 - Claude Code plugin marketplace (`.claude-plugin/marketplace.json`), trigger evals, tests and
   CI on Windows, macOS and Linux.
 
+[0.2.3]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.3
 [0.2.2]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.2
 [0.2.1]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.1
 [0.2.0]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.0
