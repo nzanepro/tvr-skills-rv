@@ -130,6 +130,114 @@ def test_skill_frontmatter_passes_for_well_formed_skill(cr, tmp_path, monkeypatc
     assert cr.check_skill_frontmatter() == []
 
 
+# --- frontmatter must be YAML a strict parser accepts ------------------------
+#
+# parse_skill_frontmatter() is deliberately lenient, so an unquoted value containing ": "
+# (a YAML error: "mapping values are not allowed here") used to pass every check here while a
+# stricter loader, such as Anthropic's plugin directory, would refuse the skill.
+
+GOOD_FRONTMATTER_LINES = [
+    "description: Lists sequences, finds missing frames and reads headers.",
+    'description: "Converts media: sequences to movies and back."',
+    "description: 'It''s quoted: fine.'",
+    "description: A value with a colon:inside a word and a C# or issue#12 reference.",
+    "description: >\n  Folded text: a colon here is fine,\n  because it is a block scalar.",
+]
+BAD_FRONTMATTER_LINES = [
+    "description: Converts media: sequences to movies and back.",
+    "description: Ends with a colon:",
+    'description: "Unterminated quote',
+    'description: "Quoted" and then more text',
+    "description: 'It's not doubled'",
+    "description: [a, list]",
+    "description: *anchor-like",
+    "description: A value # with a comment",
+]
+
+
+def _frontmatter(line):
+    return (
+        "---\n"
+        "name: example-skill\n"
+        f"{line}\n"
+        "license: MIT\n"
+        "compatibility: test only\n"
+        "metadata:\n"
+        "  version: 0.1.0\n"
+        "---\n"
+        "# Body\n"
+    )
+
+
+@pytest.mark.parametrize("line", GOOD_FRONTMATTER_LINES)
+def test_frontmatter_yaml_accepts_valid_values(cr, line):
+    assert cr.frontmatter_yaml_problems(_frontmatter(line)) == []
+
+
+@pytest.mark.parametrize("line", BAD_FRONTMATTER_LINES)
+def test_frontmatter_yaml_flags_values_strict_yaml_rejects(cr, line):
+    assert cr.frontmatter_yaml_problems(_frontmatter(line))
+
+
+def test_skill_frontmatter_flags_unquoted_colon_space(cr, tmp_path, monkeypatch):
+    skill_dir = tmp_path / "example-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        _frontmatter("description: Converts media: sequences to movies."), encoding="utf-8"
+    )
+    monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
+
+    problems = cr.check_skill_frontmatter()
+
+    assert any("not valid YAML" in p.detail and "': '" in p.detail for p in problems)
+
+
+def _pyyaml_description(line):
+    """The description PyYAML reads from _frontmatter(line), or None when it fails to parse."""
+    yaml = pytest.importorskip("yaml")
+    try:
+        return yaml.safe_load(_frontmatter(line).split("---\n")[1]).get("description")
+    except yaml.YAMLError:
+        return None
+
+
+@pytest.mark.parametrize("line", GOOD_FRONTMATTER_LINES)
+def test_good_frontmatter_samples_are_valid_for_pyyaml(line):
+    assert isinstance(_pyyaml_description(line), str)
+
+
+@pytest.mark.parametrize("line", BAD_FRONTMATTER_LINES)
+def test_bad_frontmatter_samples_fail_or_change_meaning_in_pyyaml(line):
+    """Keeps the samples honest: each "bad" line is a PyYAML error, is not a string, or (for
+    ' #') loads as something shorter than what the line shows."""
+    description = _pyyaml_description(line)
+    shown = line.split(": ", 1)[1]
+    assert not isinstance(description, str) or description != shown
+
+
+def _real_skill_frontmatters():
+    for skill_md in sorted(REPO_ROOT.glob("*/SKILL.md")):
+        text = skill_md.read_text(encoding="utf-8")
+        yield skill_md.parent.name, text.split("---\n")[1]
+
+
+@pytest.mark.parametrize("folder,frontmatter", list(_real_skill_frontmatters()))
+def test_real_skill_frontmatter_parses_with_pyyaml(folder, frontmatter):
+    yaml = pytest.importorskip("yaml")
+    data = yaml.safe_load(frontmatter)
+    assert data["name"] == folder
+    assert isinstance(data["description"], str) and data["description"]
+    assert isinstance(data["metadata"]["version"], str)
+
+
+@pytest.mark.parametrize("folder,frontmatter", list(_real_skill_frontmatters()))
+def test_real_skill_frontmatter_parses_with_strictyaml(folder, frontmatter):
+    strictyaml = pytest.importorskip("strictyaml")
+    data = strictyaml.dirty_load(frontmatter, allow_flow_style=False).data
+    assert data["name"] == folder
+    assert data["description"]
+
+
 def test_marketplace_skills_paths_flags_missing_skill_dir(cr, tmp_path, monkeypatch):
     (tmp_path / ".claude-plugin").mkdir()
     manifest = {

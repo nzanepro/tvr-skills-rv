@@ -272,7 +272,7 @@ runs are in [`rv-review/references/rv-commands.md`](rv-review/references/rv-comm
 ## Development
 
 ```bash
-python -m pip install numpy Pillow pytest
+python -m pip install numpy Pillow pytest PyYAML strictyaml
 python -m pytest tests -q
 ```
 

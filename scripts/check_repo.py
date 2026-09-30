@@ -8,9 +8,10 @@ Standard-library only, run from anywhere:
 Checks:
 
 1. Every SKILL.md has the required frontmatter keys (name, description, license,
-   compatibility, metadata.version), the name matches its folder, and the file is
-   short enough that an agent reading it in full is cheap (under 500 lines, per
-   CONTRIBUTING.md's style rule).
+   compatibility, metadata.version), the frontmatter is YAML a strict parser accepts
+   (no unquoted value containing ': ', for example), the name matches its folder, and
+   the file is short enough that an agent reading it in full is cheap (under 500
+   lines, per CONTRIBUTING.md's style rule).
 2. Every skill a plugin declares -- in its own .claude-plugin/plugin.json and in its
    .claude-plugin/marketplace.json entry -- points at a folder that exists and holds a
    SKILL.md (so a plugin install cannot point at a missing skill), the entry and the
@@ -207,6 +208,83 @@ def parse_skill_frontmatter(text: str) -> dict:
     return result
 
 
+# A plain (unquoted) YAML scalar may not start with one of these, because YAML reads them as
+# syntax (flow collections, comments, anchors, tags, block scalars, directives, reserved).
+YAML_PLAIN_START_INDICATORS = set("[]{}#&*!|>%@`,'\"")
+YAML_BLOCK_SCALAR = re.compile(r"^[|>][0-9+-]*$")
+YAML_SINGLE_QUOTED = re.compile(r"^'(?:[^']|'')*'$")
+
+
+def frontmatter_yaml_problems(text: str) -> list:
+    """Lines of the frontmatter that a strict YAML parser (PyYAML, strictyaml, the js-yaml
+    behind many skill loaders) rejects or reads differently from how they look. The case this
+    exists for: an unquoted ``description: Converts media: fast`` is a YAML error ("mapping
+    values are not allowed here"), and a directory that cannot parse a skill's frontmatter
+    refuses the plugin, while parse_skill_frontmatter() above reads it happily.
+
+    Covers the shapes these files use -- ``key: value`` lines, one nested mapping, block
+    scalars -- not YAML in general. Returns human-readable problem strings.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return []  # parse_skill_frontmatter() reports the missing fence
+    problems = []
+    block_indent = None  # inside a | or > block scalar: the indent of the key that opened it
+    for lineno, raw in enumerate(lines[1:], start=2):
+        if raw.strip() == "---":
+            break
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip(" "))
+        if block_indent is not None:
+            if indent > block_indent:
+                continue
+            block_indent = None
+        if raw.lstrip(" ").startswith("\t"):
+            problems.append(f"line {lineno}: tab indentation, which YAML does not allow")
+            continue
+        body = raw.strip()
+        if body.startswith("- "):
+            key, value = None, body[2:].strip()
+        else:
+            key, sep, value = body.partition(":")
+            if not sep:
+                problems.append(f"line {lineno}: not a 'key: value' line")
+                continue
+            if value and not value.startswith((" ", "\t")):
+                problems.append(f"line {lineno}: no space after the ':' in '{key}:'")
+                continue
+            value = value.strip()
+        label = f"'{key}'" if key else "list item"
+        if not value:
+            continue
+        if YAML_BLOCK_SCALAR.match(value):
+            block_indent = indent
+            continue
+        if value.startswith('"'):
+            try:
+                json.loads(value)
+            except ValueError:
+                problems.append(f"line {lineno}: {label} is not one complete double-quoted string "
+                                "(check for an unescaped '\"' or text after the closing quote)")
+            continue
+        if value.startswith("'"):
+            if not YAML_SINGLE_QUOTED.match(value):
+                problems.append(f"line {lineno}: {label} is not one complete single-quoted string "
+                                "(write a ' inside it as '')")
+            continue
+        if value[0] in YAML_PLAIN_START_INDICATORS or value.startswith(("- ", "? ", ": ")):
+            problems.append(f"line {lineno}: unquoted {label} starts with '{value[0]}', which YAML "
+                            "reads as syntax; put the value in double quotes")
+        elif ": " in value or value.endswith(":"):
+            problems.append(f"line {lineno}: unquoted {label} contains ': ', which YAML rejects "
+                            "(\"mapping values are not allowed here\"); put the value in double quotes")
+        elif " #" in value:
+            problems.append(f"line {lineno}: unquoted {label} contains ' #', and YAML drops "
+                            "everything after it as a comment; put the value in double quotes")
+    return problems
+
+
 def check_skill_frontmatter() -> list[Problem]:
     problems: list[Problem] = []
     for skill_md in sorted(REPO_ROOT.glob("*/SKILL.md")):
@@ -225,6 +303,9 @@ def check_skill_frontmatter() -> list[Problem]:
         except ValueError as exc:
             problems.append(Problem("skill-frontmatter", rel, f"could not read frontmatter: {exc}"))
             continue
+
+        for detail in frontmatter_yaml_problems(text):
+            problems.append(Problem("skill-frontmatter", rel, f"frontmatter is not valid YAML: {detail}"))
 
         for key in REQUIRED_SKILL_KEYS:
             if not fm.get(key):

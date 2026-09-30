@@ -14,7 +14,7 @@ against, or a report that a skill did not trigger when it should have.
 ## Running the tests
 
 ```bash
-python -m pip install numpy Pillow pytest
+python -m pip install numpy Pillow pytest PyYAML strictyaml
 python -m pytest tests -q
 ```
 
@@ -23,6 +23,9 @@ The tests never need RV or OpenRV installed; they exercise the scripts directly 
 against synthetic inputs and captured RV/rvpush output shapes. CI runs the same suite on
 Windows, macOS and Linux with Python 3.9, 3.10 and 3.13; keep new tests OS-independent (no
 hardcoded path separators, no assumption about which drive or home folder exists).
+PyYAML and strictyaml are only used to check that every `SKILL.md` frontmatter block is
+valid YAML; without them those tests are skipped. Quote a `description:` (or any other value)
+that contains `: ` or ` #`.
 
 If you can test against a real RV or OpenRV build, note the exact build and OS in the pull
 request description; the README's "Checked against OpenRV" notes and SKILL.md gotchas should
