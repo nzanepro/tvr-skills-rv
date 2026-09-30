@@ -9,8 +9,9 @@ Checks:
 
 1. Every SKILL.md has the required frontmatter keys (name, description, license,
    compatibility, metadata.version), the frontmatter is YAML a strict parser accepts
-   (no unquoted value containing ': ', for example), the name matches its folder, and
-   the file is short enough that an agent reading it in full is cheap (under 500
+   (no unquoted value containing ': ', for example), name / description /
+   compatibility fit the Agent Skills length limits (64 / 1024 / 500 characters),
+   the name matches its folder, and the file is short enough that an agent reading it in full is cheap (under 500
    lines, per CONTRIBUTING.md's style rule).
 2. Every skill a plugin declares -- in its own .claude-plugin/plugin.json and in its
    .claude-plugin/marketplace.json entry -- points at a folder that exists and holds a
@@ -64,6 +65,8 @@ BINARY_EXTS = {
 }
 
 REQUIRED_SKILL_KEYS = ("name", "description", "license", "compatibility")
+# Length limits from the Agent Skills specification (agentskills.io/specification).
+MAX_SKILL_FIELD_CHARS = {"name": 64, "description": 1024, "compatibility": 500}
 MAX_SKILL_MD_LINES = 500
 
 # Personal-path shapes: a Windows user profile, a Unix/macOS home directory, and
@@ -313,6 +316,13 @@ def check_skill_frontmatter() -> list[Problem]:
         for key in REQUIRED_SKILL_KEYS:
             if not fm.get(key):
                 problems.append(Problem("skill-frontmatter", rel, f"missing or empty '{key}:'"))
+
+        for key, limit in MAX_SKILL_FIELD_CHARS.items():
+            value = fm.get(key)
+            if isinstance(value, str) and len(value) > limit:
+                problems.append(
+                    Problem("skill-frontmatter", rel, f"'{key}' is {len(value)} characters, over the {limit} allowed")
+                )
 
         name = fm.get("name")
         if name and name != folder_name:

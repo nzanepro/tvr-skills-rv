@@ -130,6 +130,30 @@ def test_skill_frontmatter_passes_for_well_formed_skill(cr, tmp_path, monkeypatc
     assert cr.check_skill_frontmatter() == []
 
 
+@pytest.mark.parametrize("key,limit", [("description", 1024), ("compatibility", 500)])
+def test_skill_frontmatter_flags_fields_over_the_spec_length(cr, tmp_path, monkeypatch, key, limit):
+    skill_dir = tmp_path / "example-skill"
+    skill_dir.mkdir()
+    fields = {"description": "a test skill", "compatibility": "test only"}
+    fields[key] = "x" * (limit + 1)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: example-skill\n"
+        f"description: {fields['description']}\n"
+        "license: MIT\n"
+        f"compatibility: {fields['compatibility']}\n"
+        "metadata:\n"
+        "  version: 0.1.0\n"
+        "---\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cr, "REPO_ROOT", tmp_path)
+
+    problems = cr.check_skill_frontmatter()
+
+    assert any(f"'{key}' is {limit + 1} characters" in p.detail for p in problems)
+
+
 # --- frontmatter must be YAML a strict parser accepts ------------------------
 #
 # parse_skill_frontmatter() is deliberately lenient, so an unquoted value containing ": "
@@ -429,6 +453,8 @@ def test_real_plugin_keeps_its_names_and_skills():
     assert entry["source"] == "./"
     assert plugin["name"] == "rv"
     assert plugin["skills"] == ["./rv-review", "./rvio", "./rvls", "./rvpkg"]
+    # One description, shown both before install (entry) and after (plugin.json).
+    assert entry["description"] == plugin["description"]
     # plugin.json is the manifest: the entry declares no components and no second version.
     assert not any(key in entry for key in ("skills", "commands", "agents", "hooks", "strict", "version"))
 
