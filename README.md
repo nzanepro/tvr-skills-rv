@@ -117,22 +117,32 @@ On Claude Code v2.1.275 or later, one command adds the marketplace and installs 
 `/plugin install rv --marketplace nzanepro/tvr-skills-rv`. Plugin skills are namespaced, so
 the skill is `/rv:rv-review`. To update, see [Updating](#updating).
 
-**Personal skill** (every project), from a clone:
+**Personal skill** (every project), from a clone in your home folder (macOS and Linux):
 
 ```bash
-git clone https://github.com/nzanepro/tvr-skills-rv
-cp -r tvr-skills-rv/rv-review ~/.claude/skills/
+git clone https://github.com/nzanepro/tvr-skills-rv ~/tvr-skills-rv
+mkdir -p ~/.claude/skills
+cp -r ~/tvr-skills-rv/rv-review ~/.claude/skills/
 ```
 
-**Linked copy**, so a `git pull` updates the skill (Claude Code follows linked skill folders):
+**Linked copy**, so a `git pull` updates the skill (Claude Code follows linked skill folders).
+After the clone and `mkdir` above, link the folder instead of copying it:
 
 ```bash
-ln -s "$PWD/tvr-skills-rv/rv-review" ~/.claude/skills/rv-review
+ln -s ~/tvr-skills-rv/rv-review ~/.claude/skills/rv-review
 ```
+
+On Windows, in PowerShell, clone into your home folder and link the skill with a junction:
 
 ```powershell
-cmd /c mklink /J "$env:USERPROFILE\.claude\skills\rv-review" "$PWD\tvr-skills-rv\rv-review"
+cd ~
+git clone https://github.com/nzanepro/tvr-skills-rv
+mkdir -Force .claude\skills
+cmd /c mklink /J .claude\skills\rv-review tvr-skills-rv\rv-review
 ```
+
+To copy instead of linking, replace the last line with
+`Copy-Item -Recurse tvr-skills-rv\rv-review .claude\skills\`.
 
 **Project skill**: copy `rv-review/` into `<project>/.claude/skills/rv-review/` and commit it.
 
@@ -174,15 +184,27 @@ it does not trigger on its own, ask for the rv-review skill by name.
 Two synthetic sheets, `shot010_side_before_after_v2.png` (three panels) and
 `shot010_top_before_after.png` (two panels):
 
-```console
-$ python rv-review/scripts/sheet_panels.py split shot010_side_before_after_v2.png shot010_top_before_after.png --out rv_frames
+```bash
+python rv-review/scripts/sheet_panels.py split shot010_side_before_after_v2.png shot010_top_before_after.png --out rv_frames
+```
+
+It prints the frames it wrote:
+
+```text
 .../rv_frames/shot010_side_before_after_v2__before__1.png
 .../rv_frames/shot010_side_before_after_v2__after__2.png
 .../rv_frames/shot010_side_before_after_v2__v2__3.png
 .../rv_frames/shot010_top_before_after__before__4.png
 .../rv_frames/shot010_top_before_after__after__5.png
+```
 
-$ python rv-review/scripts/rv_review.py --frames-json rv_frames/frames.json
+Then load them:
+
+```bash
+python rv-review/scripts/rv_review.py --frames-json rv_frames/frames.json
+```
+
+```text
 {"action": "launched", "pid": 4242, "tag": "rv-review", "sources": 5, "marks": [1, 4],
  "state": {"frame": 1, "frameEnd": 5, "marks": [1, 4], "sources": 5,
            "viewNodeType": "RVSequenceGroup", "stereo": "off", "fps": 1.0, "frames": 5, ...},
@@ -291,10 +313,9 @@ Before a release, run `claude plugin validate . --strict` (it checks
 `python scripts/check_repo.py` (skill frontmatter, manifests and privacy), and keep `SKILL.md`
 under 500 lines with its gotchas in the file.
 
-Images: [`docs/images/rv-flipbook.png`](docs/images/rv-flipbook.png) is the README demo and
-[`docs/images/social-preview.png`](docs/images/social-preview.png) (1280 x 640) is the GitHub
-social preview image (repository Settings > Social preview). Both are made from synthetic
-renders only.
+Images: [the README demo](docs/images/rv-flipbook.png) and
+[the GitHub social preview](docs/images/social-preview.png) (1280 x 640, set in the
+repository's Settings > Social preview) are made from synthetic renders only.
 
 ## Updating
 
@@ -323,7 +344,7 @@ in builds that enable them); rvls exits 0 for paths that do not exist and counts
 span rather than its files; rvpkg exits 0 when a package name does not match.
 
 Install one or all of them like `rv-review`, e.g.
-`cp -r tvr-skills-rv/rvio tvr-skills-rv/rvls tvr-skills-rv/rvpkg ~/.claude/skills/`.
+`cp -r ~/tvr-skills-rv/rvio ~/tvr-skills-rv/rvls ~/tvr-skills-rv/rvpkg ~/.claude/skills/`.
 
 ## See also
 
