@@ -83,7 +83,9 @@ The launcher itself uses only the Python standard library and runs on Windows, m
 
 ### How the launcher finds RV
 
-First match wins; `rvpush` must be in the same folder as `rv`. No shell variable is read.
+First match wins; `rvpush` must be in the same folder as `rv`. The scripts read no shell
+variable themselves (Python's own `shutil.which` and home-folder lookups still consult
+`PATH` and the user profile, as every program does).
 
 | Order | Where | Notes |
 |---|---|---|
@@ -92,7 +94,7 @@ First match wins; `rvpush` must be in the same folder as `rv`. No shell variable
 | 3 | config file | `"rv_bin"` in `~/.config/tvr-skills-rv/config.json`, same forms as `--rv-bin` (a leading `~` is the home folder), for example `{"rv_bin": "/opt/rv/bin"}` |
 | 4 | `PATH` | `rv.exe`, `RV` or `rv` |
 | 5 | Windows registry | `App Paths\rv.exe`, added by the `.reg` files RV ships in `etc/` |
-| 6 | install folders, newest first | Windows `Program Files` and `Program Files (x86)` `\OpenRV*\bin`, `\{Autodesk,ShotGrid,Shotgun}\RV*\bin`; macOS `/Applications` and `~/Applications` `RV*.app` / `OpenRV*.app` `/Contents/MacOS`; Linux `/opt/rv*/bin`, `/opt/RV*/bin`, `/opt/OpenRV*/bin`, `/usr/local/rv*/bin`, `/usr/local/bin` |
+| 6 | install folders, newest first | Windows `Program Files` and `Program Files (x86)` `\OpenRV*\bin`, `\{Autodesk,ShotGrid,Shotgun}\RV*\bin`; macOS `/Applications` and `~/Applications` `RV*.app` / `OpenRV*.app` `/Contents/MacOS`; Linux `/opt/rv*/bin`, `/opt/RV*/bin`, `/opt/OpenRV*/bin`, `/opt/openrv*/bin`, `/usr/local/rv*/bin`, `/usr/local/OpenRV*/bin`, `/usr/local/bin` |
 | 7 | OpenRV built from source | an [openrv-build-plugin](https://github.com/loorthu/openrv-build-plugin) checkout (a folder holding `rvcmds.sh`): the current folder or one above it, `~/OpenRV`, or `C:\OpenRV` on Windows; then its `_build/stage/app/RV.app/Contents/MacOS` (macOS) or `_build/stage/app/bin` |
 
 The same config file can also hold `"chrome"` and `"playwright_browsers"` for web capture and
@@ -286,10 +288,14 @@ runs are in [`rv-review/references/rv-commands.md`](rv-review/references/rv-comm
 
 - **No hooks, servers or background jobs.** The plugin is four skills. Their Python scripts
   run only when the agent (or you) runs them, with your own permissions, and install nothing.
-  They read no shell or system variables: programs are found from flags (`--rv-bin`,
-  `--chrome`, `--playwright-browsers`, `--adb`), the optional config file
+  They read no shell or system variables themselves: programs are found from flags
+  (`--rv-bin`, `--chrome`, `--playwright-browsers`, `--adb`), the optional config file
   `~/.config/tvr-skills-rv/config.json`, `PATH`, the Windows registry and known folders, and
-  the usual install folders. On macOS and Linux, rvpush runs under
+  the usual install folders. (Python's standard library still consults `PATH`, the user
+  profile and the temp-folder settings for `shutil.which`, `Path.home()` and the temp
+  directory, as any program does; a custom `XDG_DATA_HOME` or `XDG_CACHE_HOME` is not
+  followed, so on such a Linux setup the OpenRV log fallback and the Playwright cache are
+  not found.) On macOS and Linux, rvpush runs under
   `/usr/bin/env RVPUSH_RV_EXECUTABLE_PATH=none`, which sets that one variable for rvpush so it
   never starts an RV of its own.
 - **RV on this computer.** The scripts find RV and its tools (see

@@ -32,7 +32,9 @@ def test_every_skill_passes_the_option_as_rv_bin_only_when_it_is_a_path():
     for skill in SKILLS:
         text = (REPO_ROOT / skill / "SKILL.md").read_text(encoding="utf-8")
         assert text.count(REFERENCE) == 1, skill
-        after = text[text.index(REFERENCE):][:400]
+        after = text[text.index(REFERENCE):][:800]
         assert "--rv-bin" in after, skill
         assert "starts with a dollar sign" in after, skill
+        assert "brackets are empty" in after, skill          # an unset option may render as []
         assert "never pass that text as a path" in after, skill
+        assert "before" in after, skill                      # options go before --push / the tool

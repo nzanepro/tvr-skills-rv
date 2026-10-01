@@ -41,7 +41,9 @@ unless that variable is `none`. *verified: help text and exit codes below.*
 In this skill, send rvpush commands through `python scripts/rv_review.py [--tag T] --push
 COMMAND ARG ...` (see `rv-commands.md`): it runs rvpush only while an RV with the tag is
 alive, and on macOS and Linux also under `/usr/bin/env RVPUSH_RV_EXECUTABLE_PATH=none`, so no
-stray RV is started. On Windows the live-RV check is the only guard, and rvpush can still
+stray RV is started. The check wants a port file whose process is alive *and* is RV (a
+crashed RV leaves its file behind, and the system can hand that process id to another
+program later). On Windows the live-RV check is the only guard, and rvpush can still
 start an RV if the tagged one quits in the moment between the check and the push.
 
 ```text

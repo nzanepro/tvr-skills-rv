@@ -26,9 +26,12 @@ or the checkout you are in). No shell variable is read. If nothing is found, ask
 user where RV is installed and pass `--rv-bin`.
 
 Plugin setting "RV bin folder": [${user_config.rv_bin}]. When the text between those
-brackets is a folder path, pass it to the scripts as `--rv-bin "<that path>"`. When it still
-starts with a dollar sign, the setting is empty or the skill was installed on its own: pass
-nothing for it, and never pass that text as a path.
+brackets is a folder path, pass it as `--rv-bin "<that path>"` to `scripts/rv_find.py`,
+`scripts/rv_tool.py` and `scripts/rvpkg_list.py`, placed before the tool name or before
+`--push`, where all other options of a script go (anything after `--push`, or after the tool
+name in `rv_tool.py`, is sent on as an argument). When the brackets are empty or the text
+still starts with a dollar sign, the setting is unset or the skill was installed on its own:
+pass nothing for it, and never pass that text as a path.
 
 ## Scripts
 

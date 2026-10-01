@@ -44,10 +44,13 @@ Windows registry, the usual install folders, then an OpenRV built from source (`
 the checkout you are in); rvpush must sit next to rv. No shell variable is read. If nothing is
 found, ask for the folder and pass `--rv-bin`.
 
-Plugin setting "RV bin folder": [${user_config.rv_bin}]. When the text between those
-brackets is a folder path, pass it to the scripts as `--rv-bin "<that path>"`. When it still
-starts with a dollar sign, the setting is empty or the skill was installed on its own: pass
-nothing for it, and never pass that text as a path.
+Plugin setting "RV bin folder": [${user_config.rv_bin}]. When the text between those brackets
+is a folder path, pass it as `--rv-bin "<that path>"` to `scripts/rv_review.py` and
+`scripts/rv_session.py check|render` (the scripts that run RV programs; the capture, rasterize
+and manifest scripts do not take it), before `--push` when that is used, where every other
+option goes (anything after `--push` is sent on to RV). When the brackets are empty or the text
+still starts with a dollar sign, the setting is unset or the skill was installed on its own:
+pass nothing for it, and never pass that text as a path.
 
 ## Steps
 
