@@ -75,7 +75,7 @@ def decide_exit(tool, returncode, errors, strict=None):
     return 0, f"{tool} finished OK"
 
 
-def run(tool, args, rv_bin=None, timeout=DEFAULT_TIMEOUT_S, cwd=None, strict=None, env=None):
+def run(tool, args, rv_bin=None, timeout=DEFAULT_TIMEOUT_S, cwd=None, strict=None):
     """Run tool with args; return the JSON-able result dict (never raises for tool failures)."""
     result = {"tool": tool, "argv": None, "returncode": None, "exit": None, "elapsed_s": None,
               "error_lines": [], "stdout": "", "stderr": "", "message": ""}
@@ -88,7 +88,7 @@ def run(tool, args, rv_bin=None, timeout=DEFAULT_TIMEOUT_S, cwd=None, strict=Non
     t0 = time.monotonic()
     try:
         proc = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                              errors="replace", timeout=timeout, cwd=cwd, env=env,
+                              errors="replace", timeout=timeout, cwd=cwd,
                               creationflags=rv_find.no_window_flags())
     except subprocess.TimeoutExpired as exc:
         result.update(elapsed_s=round(time.monotonic() - t0, 3), exit=124,

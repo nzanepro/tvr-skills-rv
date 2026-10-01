@@ -116,8 +116,8 @@ def main(argv=None):
             print(res["message"] + "\n" + res["stderr"], file=sys.stderr)
             return 1
         report["packages"] = parse_list(res["stdout"])
-        env = rv_tool.run("rvpkg", area_args(a) + ["-env"], a.rv_bin, a.timeout, strict=False)
-        report["support_areas"] = [l.strip() for l in env["stdout"].splitlines() if l.strip()]
+        areas = rv_tool.run("rvpkg", area_args(a) + ["-env"], a.rv_bin, a.timeout, strict=False)
+        report["support_areas"] = [l.strip() for l in areas["stdout"].splitlines() if l.strip()]
     if a.name:
         t = a.name.lower()
         report["packages"] = [p for p in report["packages"]

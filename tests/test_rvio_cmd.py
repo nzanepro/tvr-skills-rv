@@ -480,7 +480,7 @@ class TestRunPath:
         touch(tmp_path / "plate.0001.exr")
         touch(tmp_path / "plate.0002.exr")
 
-        def fake_run(tool, args, rv_bin=None, timeout=None, cwd=None, strict=None, env=None):
+        def fake_run(tool, args, rv_bin=None, timeout=None, cwd=None, strict=None):
             touch(tmp_path / "out.0001.exr")
             touch(tmp_path / "out.0002.exr")
             return {"exit": 0, "message": "rvio finished OK", "elapsed_s": 0.1,
@@ -495,7 +495,7 @@ class TestRunPath:
         touch(tmp_path / "plate.0001.exr")
         touch(tmp_path / "plate.0002.exr")
 
-        def fake_run(tool, args, rv_bin=None, timeout=None, cwd=None, strict=None, env=None):
+        def fake_run(tool, args, rv_bin=None, timeout=None, cwd=None, strict=None):
             return {"exit": 0, "message": "rvio finished OK", "elapsed_s": 0.1,
                    "argv": ["rvio"] + args, "error_lines": []}
 
@@ -507,7 +507,7 @@ class TestRunPath:
         monkeypatch.chdir(tmp_path)
         touch(tmp_path / "plate.0001.exr")
 
-        def fake_run(tool, args, rv_bin=None, timeout=None, cwd=None, strict=None, env=None):
+        def fake_run(tool, args, rv_bin=None, timeout=None, cwd=None, strict=None):
             return {"exit": 3, "message": "rvio exited 0 but reported 1 error(s)",
                    "elapsed_s": 0.1, "argv": ["rvio"] + args,
                    "error_lines": ["ERROR: bad"]}
@@ -521,7 +521,7 @@ class TestRunPath:
         touch(tmp_path / "plate.0001.exr")
         target_folder = tmp_path / "made_by_mkdir"
 
-        def fake_run(tool, args, rv_bin=None, timeout=None, cwd=None, strict=None, env=None):
+        def fake_run(tool, args, rv_bin=None, timeout=None, cwd=None, strict=None):
             assert target_folder.is_dir()   # must already exist when the tool "runs"
             touch(target_folder / "out.0001.exr")
             return {"exit": 0, "message": "ok", "elapsed_s": 0.1, "argv": ["rvio"] + args,

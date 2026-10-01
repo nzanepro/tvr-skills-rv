@@ -683,22 +683,22 @@ def test_read_notes_no_rv_answering_raises(rr, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_envelope_ok(rr):
-    env = rr.envelope({"action": "launched", "sources": 2})
-    assert env["schema"] == "rv-review.result"
-    assert env["schema_version"] == 1
-    assert env["ok"] is True
-    assert env["exit_code"] == 0
-    assert env["action"] == "launched" and env["sources"] == 2
-    assert "error" not in env
-    assert list(env)[:4] == ["schema", "schema_version", "ok", "exit_code"]
+    res = rr.envelope({"action": "launched", "sources": 2})
+    assert res["schema"] == "rv-review.result"
+    assert res["schema_version"] == 1
+    assert res["ok"] is True
+    assert res["exit_code"] == 0
+    assert res["action"] == "launched" and res["sources"] == 2
+    assert "error" not in res
+    assert list(res)[:4] == ["schema", "schema_version", "ok", "exit_code"]
 
 
 @pytest.mark.parametrize("code", [1, 2, 3])
 def test_envelope_failure_codes_are_not_ok(rr, code):
-    env = rr.envelope({"action": "error"}, code, "went wrong")
-    assert env["ok"] is False
-    assert env["exit_code"] == code
-    assert env["error"] == "went wrong"
+    res = rr.envelope({"action": "error"}, code, "went wrong")
+    assert res["ok"] is False
+    assert res["exit_code"] == code
+    assert res["error"] == "went wrong"
 
 
 def test_envelope_ok_follows_exit_code_not_body(rr):
@@ -743,21 +743,21 @@ def _one_json_line(stdout):
 def test_cli_bad_arguments_print_one_json_line_and_exit_2(tmp_path, args):
     result = _run_cli(*args, cwd=tmp_path)
     assert result.returncode == 2
-    env = _one_json_line(result.stdout)
-    assert env["ok"] is False
-    assert env["exit_code"] == 2
-    assert env["schema"] == "rv-review.result"
-    assert env["action"] == "error"
-    assert env["error"].startswith("rv_review.py:")
+    res = _one_json_line(result.stdout)
+    assert res["ok"] is False
+    assert res["exit_code"] == 2
+    assert res["schema"] == "rv-review.result"
+    assert res["action"] == "error"
+    assert res["error"].startswith("rv_review.py:")
     assert "usage" in result.stderr.lower()
 
 
 def test_cli_export_annotated_without_notes_exits_1(tmp_path):
     result = _run_cli("--export-annotated", str(tmp_path / "notes"), cwd=tmp_path)
     assert result.returncode == 1
-    env = _one_json_line(result.stdout)
-    assert env["ok"] is False
-    assert env["exit_code"] == 1
-    assert "--export-annotated goes with --notes" in env["error"]
+    res = _one_json_line(result.stdout)
+    assert res["ok"] is False
+    assert res["exit_code"] == 1
+    assert "--export-annotated goes with --notes" in res["error"]
     assert result.stderr.startswith("rv_review:")
     assert not (tmp_path / "notes").exists()

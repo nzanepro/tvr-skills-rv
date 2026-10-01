@@ -638,10 +638,10 @@ def test_main_selftest_all_ok_prints_one_json_line_and_exits_0(rr, monkeypatch, 
     code = rr.main(["--selftest", "--tag", "t"])
     lines = capsys.readouterr().out.strip().splitlines()
     assert len(lines) == 1
-    env = json.loads(lines[0])
-    assert env["schema"] == "rv-review.result"
-    assert env["action"] == "selftest"
-    assert env["ok"] is True
+    res = json.loads(lines[0])
+    assert res["schema"] == "rv-review.result"
+    assert res["action"] == "selftest"
+    assert res["ok"] is True
     assert code == 0 == rr.EXIT_OK
 
 
@@ -652,8 +652,8 @@ def test_main_selftest_broken_binding_exits_3(rr, monkeypatch, capsys):
     monkeypatch.setattr(rr, "find_rv", lambda *a, **k: ("rv", "rvpush"))
     code = rr.main(["--selftest", "--tag", "t"])
     lines = capsys.readouterr().out.strip().splitlines()
-    env = json.loads(lines[0])
-    assert env["ok"] is False
+    res = json.loads(lines[0])
+    assert res["ok"] is False
     assert code == 3 == rr.EXIT_MISMATCH
 
 

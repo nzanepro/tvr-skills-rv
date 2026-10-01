@@ -219,14 +219,14 @@ def test_load_timeout_when_rv_keeps_running(monkeypatch, rr):
 @pytest.mark.parametrize("body", [None, {"action": "state"}, {"errors": None, "warnings": None},
                                   {"action": "notes", "problems": []}])
 def test_envelope_errors_and_warnings_are_always_lists(rr, body):
-    env = rr.envelope(body)
-    assert env["errors"] == [] and env["warnings"] == []
-    assert json.loads(json.dumps(env))["errors"] == []
+    res = rr.envelope(body)
+    assert res["errors"] == [] and res["warnings"] == []
+    assert json.loads(json.dumps(res))["errors"] == []
 
 
 def test_envelope_keeps_given_lists(rr):
-    env = rr.envelope({"errors": ["e"], "warnings": ["w"]}, rr.EXIT_MISMATCH)
-    assert env["errors"] == ["e"] and env["warnings"] == ["w"]
+    res = rr.envelope({"errors": ["e"], "warnings": ["w"]}, rr.EXIT_MISMATCH)
+    assert res["errors"] == ["e"] and res["warnings"] == ["w"]
 
 
 def test_export_annotated_asks_rvio_for_srgb_output(tmp_path, monkeypatch, rr):
