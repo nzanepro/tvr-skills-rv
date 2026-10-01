@@ -2,7 +2,7 @@
 
 Covers: validate() (every kind of problem the docstring/format promises to catch, and that
 several problems in one bad manifest are all reported, not just the first); normalise()
-(defaults, path resolution, label fallback, meta/annotation pass-through); load() from a file
+(defaults, path resolution, label fallback, meta/annotation carry-through); load() from a file
 and from stdin (including relative-path resolution against the manifest's own folder, not the
 process cwd); from_frames_json() (the legacy sheet_panels.py split output); the small pure
 helpers rv_tokens(), group_starts() and is_sequence_spec(); and the CLI (main(), via
@@ -390,7 +390,7 @@ def test_manifest_error_collects_every_problem_at_once(rm):
 
 
 # ---------------------------------------------------------------------------
-# normalise(): defaults, path resolution, labels, meta/annotation pass-through
+# normalise(): defaults, path resolution, labels, meta/annotation carry-through
 # ---------------------------------------------------------------------------
 
 def test_normalise_raises_manifest_error_on_bad_input(rm):

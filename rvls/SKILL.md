@@ -22,15 +22,15 @@ python scripts/rv_find.py --path rvls    # or without --path for every RV tool a
 Search order: `--rv-bin`, `rv_bin` in `~/.config/tvr-skills-rv/config.json`, `PATH`, the
 Windows registry, the usual install folders, then an OpenRV built from source (`~/OpenRV`,
 or the checkout you are in). No shell variable is read. If nothing is found, ask the
-user where RV is installed and pass `--rv-bin`.
+user where RV is installed and use `--rv-bin`.
 
 Plugin setting "RV bin folder": [${user_config.rv_bin}]. When the text between those
-brackets is a folder path, pass it as `--rv-bin "<that path>"` to `scripts/rv_find.py`,
+brackets is a folder path, give it as `--rv-bin "<that path>"` to `scripts/rv_find.py`,
 `scripts/rv_tool.py` and `scripts/rvls_check.py`, placed before the tool name or before
 `--push`, where all other options of a script go (anything after `--push`, or after the tool
 name in `rv_tool.py`, is sent on as an argument). When the brackets are empty or the text
 still starts with a dollar sign, the setting is unset or the skill was installed on its own:
-pass nothing for it, and never pass that text as a path.
+give nothing for it, and never give that text as a path.
 
 ## Scripts
 
@@ -72,7 +72,7 @@ Paths are relative to this skill's folder; run each with `--help` first.
 rvls exits 0 even when a path does not exist or a file cannot be read, and prints `ERROR:`
 lines for every non-image file in a folder. So:
 
-1. Prefer `rvls_check.py` for pass / fail checks; it exits 1 on a missing path, a missing
+1. Prefer `rvls_check.py` for ok / fail checks; it exits 1 on a missing path, a missing
    frame (`--no-gaps`), a wrong range, size, channel count or pixel type, or an unreadable
    file (`--readable`).
 2. For a movie, check `Duration`, `FPS`, `VideoCodec`, `VideoPixelFormat` and, when relevant,
@@ -81,7 +81,7 @@ lines for every non-image file in a folder. So:
 
 ## Gotchas
 
-- rvls takes folders and files, not sequence specs: `rvls "shot.#.exr"` prints nothing. Pass
+- rvls takes folders and files, not sequence specs: `rvls "shot.#.exr"` prints nothing. Give
   the folder (or let `rvls_check.py` do it for you).
 - Two numbered files are not a sequence by default (`-min 3`); use `-min 2`.
 - Files with different padding (`t.0004.png`, `t.00005.png`) are merged into one sequence.

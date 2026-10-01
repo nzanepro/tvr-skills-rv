@@ -24,7 +24,7 @@ the output is an `.rv` session file.
 ```bash
 rvio "shot.#.exr" -outsrgb -o review.mov \
   -leader simpleslate "Studio" "Show=Demo" "Shot=sh010" "Version=v001" "Artist=A. Artist" \
-          "Comments=first pass" -leaderframes 2
+          "Comments=first take" -leaderframes 2
 ```
 
 - First argument: text printed vertically down the left side.

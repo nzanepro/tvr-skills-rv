@@ -11,7 +11,7 @@ Two kinds of test:
   broken SKILL.md, or a dangling marketplace skill entry, this test fails in CI.
 - Run each check against a small synthetic repo layout built in ``tmp_path`` and
   assert it *does* flag a planted problem, so the checks are proven to actually
-  detect what they claim to, not just pass vacuously on a clean tree.
+  detect what they claim to, not just succeed vacuously on a clean tree.
 """
 import importlib.util
 import json
@@ -162,7 +162,7 @@ def test_skill_frontmatter_flags_fields_over_the_spec_length(cr, tmp_path, monke
 # --- frontmatter must be YAML a strict parser accepts ------------------------
 #
 # parse_skill_frontmatter() is deliberately lenient, so an unquoted value containing ": "
-# (a YAML error: "mapping values are not allowed here") used to pass every check here while a
+# (a YAML error: "mapping values are not allowed here") used to get through every check here while a
 # stricter loader, such as Anthropic's plugin directory, would refuse the skill.
 
 GOOD_FRONTMATTER_LINES = [

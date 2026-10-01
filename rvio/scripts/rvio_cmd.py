@@ -251,7 +251,7 @@ def build(a):
             codec = codec.upper()
         if is_movie and codec in UNAVAILABLE_CODECS and not a.allow_codec:
             raise CheckError(f"OpenRV's rvio cannot write '{codec}'. Use "
-                             f"{UNAVAILABLE_CODECS[codec]}. Pass --allow-codec if this is an "
+                             f"{UNAVAILABLE_CODECS[codec]}. Use --allow-codec if this is an "
                              f"RV build that has it.")
         if is_movie and codec in BUILD_DEPENDENT_CODECS:
             warnings.append(f"'{codec}' is only in some OpenRV builds (stock builds leave out "
@@ -341,7 +341,7 @@ def check_inputs(a):
             continue                              # procedural source: bars, solid colour, ...
         if "*" in inp or "?" in inp:
             raise CheckError(f"'{inp}': rvio does not expand wildcards itself (and on Windows "
-                             f"nothing does); use name.#.ext or pass the folder")
+                             f"nothing does); use name.#.ext or give the folder")
         if is_sequence(inp):
             if not frames_on_disk(inp):
                 raise CheckError(f"no files match the sequence '{inp}'")
@@ -380,7 +380,7 @@ def check_output(a):
     parent = os.path.dirname(os.path.abspath(a.output))
     if not os.path.isdir(parent) and not a.mkdir:
         raise CheckError(f"output folder '{parent}' does not exist; rvio will not create it "
-                         f"(pass --mkdir)")
+                         f"(use --mkdir)")
     if out_ext in MOVIE_EXTS or out_ext in AUDIO_EXTS or out_ext == "null":
         return
     if not is_sequence(a.output):

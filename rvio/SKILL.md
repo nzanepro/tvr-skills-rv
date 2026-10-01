@@ -24,15 +24,15 @@ Search order: `--rv-bin`, `rv_bin` in `~/.config/tvr-skills-rv/config.json`, `PA
 Windows registry, the usual install folders (Program Files OpenRV / Autodesk / ShotGrid,
 `/Applications/*RV*.app`, `/opt/rv*`, `/usr/local/rv*`), then an OpenRV built from source
 (`~/OpenRV`, or the checkout you are in: `_build/stage/app`). No shell variable is
-read. If nothing is found, ask the user where RV is installed and pass `--rv-bin`.
+read. If nothing is found, ask the user where RV is installed and use `--rv-bin`.
 
 Plugin setting "RV bin folder": [${user_config.rv_bin}]. When the text between those
-brackets is a folder path, pass it as `--rv-bin "<that path>"` to `scripts/rv_find.py`,
+brackets is a folder path, give it as `--rv-bin "<that path>"` to `scripts/rv_find.py`,
 `scripts/rv_tool.py`, `scripts/rvio_cmd.py` and `scripts/rvio_codecs.py`, placed before the
 tool name or before `--push`, where all other options of a script go (anything after
 `--push`, or after the tool name in `rv_tool.py`, is sent on as an argument). When the
 brackets are empty or the text still starts with a dollar sign, the setting is unset or the
-skill was installed on its own: pass nothing for it, and never pass that text as a path.
+skill was installed on its own: give nothing for it, and never give that text as a path.
 
 ## Scripts
 

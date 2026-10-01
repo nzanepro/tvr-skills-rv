@@ -42,15 +42,15 @@ box. Every script prints one JSON line.
 RV is found through `--rv-bin`, `rv_bin` in `~/.config/tvr-skills-rv/config.json`, `PATH`, the
 Windows registry, the usual install folders, then an OpenRV built from source (`~/OpenRV`, or
 the checkout you are in); rvpush must sit next to rv. No shell variable is read. If nothing is
-found, ask for the folder and pass `--rv-bin`.
+found, ask for the folder and use `--rv-bin`.
 
 Plugin setting "RV bin folder": [${user_config.rv_bin}]. When the text between those brackets
-is a folder path, pass it as `--rv-bin "<that path>"` to `scripts/rv_review.py` and
+is a folder path, give it as `--rv-bin "<that path>"` to `scripts/rv_review.py` and
 `scripts/rv_session.py check|render` (the scripts that run RV programs; the capture, rasterize
 and manifest scripts do not take it), before `--push` when that is used, where every other
 option goes (anything after `--push` is sent on to RV). When the brackets are empty or the text
 still starts with a dollar sign, the setting is unset or the skill was installed on its own:
-pass nothing for it, and never pass that text as a path.
+give nothing for it, and never give that text as a path.
 
 ## Steps
 
@@ -58,7 +58,7 @@ Copy this checklist into the reply and tick it off:
 
 ```
 - [ ] 1. Collect the sources in viewing order
-- [ ] 2. Prepare them (split / label / compare / group / pass through)
+- [ ] 2. Prepare them (split / label / compare / group / leave as is)
 - [ ] 3. Load or refresh RV
 - [ ] 4. Verify the read-back
 - [ ] 5. Report
@@ -76,7 +76,7 @@ Copy this checklist into the reply and tick it off:
      Read `references/compare-dirs.md` first.
    - One screen in many variants: `python scripts/review_set.py ROOT --out DIR`.
    - Web pages, apps, SVG: capture or rasterise first; read `references/ui-app-web.md`.
-   - Movies, image sequences, EXRs, lat-long images: pass them as they are, sequences in RV
+   - Movies, image sequences, EXRs, lat-long images: use them as they are, sequences in RV
      notation (`shot.#.exr`, `shot.1001-1100#.exr`) and quoted in the shell.
 3. **Load:** `python scripts/rv_review.py --frames-json DIR/frames.json`, `--manifest
    review.json`, `review.rv`, or `python scripts/rv_review.py SOURCE ...` with, only when asked

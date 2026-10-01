@@ -17,7 +17,7 @@ package's whole life cycle in a throw-away support area.
 | `-optin PKG ...` | make installed optional packages load for every user of the area |
 | `-include DIR` | also search DIR, as if it were on `RV_SUPPORT_PATH` |
 | `-only DIR` | search DIR instead of `RV_SUPPORT_PATH` (the install's own area is still listed; cannot be combined with `-add` or `-include`) |
-| `-force` | answer yes to every question; always pass it from scripts |
+| `-force` | answer yes to every question; always use it from scripts |
 
 `PKG` can be the full path of the package file (most reliable), the package's display name
 (matches every copy in every area), or the file name (did not match in testing). Commands
@@ -88,7 +88,7 @@ command touches exactly one copy.
 
 ## Scripting notes
 
-- Close stdin (or pass `-force`) so a confirmation prompt can never hang a script;
+- Close stdin (or use `-force`) so a confirmation prompt can never hang a script;
   `rv_tool.py` does both.
 - Check the result with `-list` (or `rvpkg_list.py`), never with rvpkg's exit code.
 - Changes apply the next time RV starts; a running RV does not reload packages.

@@ -40,7 +40,7 @@ rvpush starting an RV of its own; on macOS and Linux rvpush also runs under
 --push COMMAND ARG ... runs one such guarded rvpush command (set, merge, py-exec,
 py-eval-return, ...) against the tag and prints its output in the JSON result.
 
-Callers such as other skills pass a review manifest (--manifest FILE, or - for stdin): ordered
+Callers such as other skills give a review manifest (--manifest FILE, or - for stdin): ordered
 items with labels, groups, in / out, fps, views and a free-form "meta" object that comes back
 untouched in the result and in --notes. A .rv session file given as the only source is opened
 as it is. --save-session writes a .rv of what was loaded. --notes reads the reviewer's
@@ -310,7 +310,7 @@ def find_rv(rv_bin=None, config=None, platform=None, home=None, root="/", regist
     raise RvError(f"RV not found: tried --rv-bin, rv_bin in {config_file}, PATH, the Windows "
                   f"registry, the usual install folders and an OpenRV build (~/OpenRV or a "
                   f"folder above this one holding {local_config.OPENRV_MARKER}). Install RV or "
-                  f"OpenRV, or pass --rv-bin <folder with rv and rvpush>, or put that folder "
+                  f"OpenRV, or use --rv-bin <folder with rv and rvpush>, or put that folder "
                   f"in the config file as \"rv_bin\".")
 
 
@@ -431,7 +431,7 @@ def header_problem(path, jpeg_end=True):
     """What is wrong with an image file's header or end, or None: empty file, wrong magic
     number, a PNG without its IEND chunk, a JPEG without its end marker (jpeg_end; some
     cameras append data after it, so a full decode is the better test), a DPX shorter than
-    the size in its header. Formats without a known check pass."""
+    the size in its header. Formats without a known check are accepted."""
     ext = Path(path).suffix.lower()
     try:
         size = os.path.getsize(path)
@@ -526,7 +526,7 @@ def decode_check(tokens, image_module="auto"):
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=min(DECODE_WORKERS, len(files))) as pool:
         found = list(pool.map(lambda f: decode_problem(f, image_module), files))
-    return [f"{f}: {msg}; RV shows it as 'error reading'. Re-render or re-export it (or pass "
+    return [f"{f}: {msg}; RV shows it as 'error reading'. Re-render or re-export it (or give "
             f"--no-decode-check to skip this check)" for f, msg in zip(files, found) if msg]
 
 
@@ -535,7 +535,7 @@ def load_frames_json(path):
     path = Path(path)
     if not path.is_file():
         raise RvError(f"frames.json not found: {path}. Run 'sheet_panels.py split SHEET ... "
-                      f"--out DIR' first and pass DIR/frames.json.")
+                      f"--out DIR' first and give DIR/frames.json.")
     data = json.loads(path.read_text())
     return [str(f) for f in data["frames"]], [int(v["frame"]) for v in data["views"]]
 
@@ -1416,7 +1416,7 @@ def read_notes(rv, rvpush, tag, export_dir=None):
     state = read_state(rvpush, tag)
     if state is None:
         raise RvError(f"no RV with tag '{tag}' answered. Load the review with this script "
-                      f"first, or pass the --tag the review window was started with.")
+                      f"first, or give the --tag the review window was started with.")
     info = _eval(rvpush, tag, SOURCE_REVIEW_EXPR) or []
     sess = _eval(rvpush, tag, SESSION_REVIEW_EXPR) or []
     title, layout, meta, groups = [_first(v) for v in (sess[0] if sess else [[]] * 4)]
@@ -1693,7 +1693,7 @@ def selftest(rvpush, tag):
     st = _eval(rvpush, tag, SELFTEST_STATE_EXPR)
     if not isinstance(st, (list, tuple)) or len(st) != 7:
         raise RvError(f"no RV with tag '{tag}' answered. Load a review with this script first, "
-                      f"or pass the --tag the review window was started with.")
+                      f"or give the --tag the review window was started with.")
     frame0, start, end, in_point, out_point, marks, playing = st
     marks = sorted(set(int(m) for m in marks or []))
     if end - start + 1 < 2:
@@ -1890,7 +1890,7 @@ def push_body(rvpush, tag, words, options=None):
     if not live_rv_pids(tag):
         raise RvError(f"no RV with tag '{tag}' is running, so nothing was sent (rvpush was not "
                       f"run, and no RV was started). Load sources with this script first, or "
-                      f"pass the --tag the review window was started with.")
+                      f"give the --tag the review window was started with.")
     code, out = _rvpush(rvpush, tag, *words)
     body = {"action": "push", "tag": tag, "command": list(words), "rvpush_exit": code,
             "output": out}
@@ -1911,7 +1911,7 @@ def _state_body(rvpush, tag):
     state = read_state(rvpush, tag)
     if state is None:
         raise RvError(f"no RV with tag '{tag}' answered. Load sources with this script "
-                      f"first, or pass the --tag the review window was started with.")
+                      f"first, or give the --tag the review window was started with.")
     info = _eval(rvpush, tag, SOURCE_REVIEW_EXPR) or []
     seq = state["viewNodeType"] == "RVSequenceGroup"
     items, _ = items_from_rv(info, state, "sequence" if seq else "stack")
@@ -1945,7 +1945,7 @@ def main(argv=None):
         manifest = None
         if a.manifest or a.frames_json:
             if a.manifest and a.frames_json:
-                raise RvError("pass --manifest or --frames-json, not both.")
+                raise RvError("use --manifest or --frames-json, not both.")
             if a.frames_json and not Path(a.frames_json).is_file():
                 load_frames_json(a.frames_json)            # raises the helpful message
             try:
@@ -1960,7 +1960,7 @@ def main(argv=None):
                 mm = manifest.get("marks", "auto")
                 marks = mm if isinstance(mm, list) else ([] if mm == "none" else "auto")
         if not tokens:
-            raise RvError("no sources given. Pass stills, movies, sequences or a .rv session in "
+            raise RvError("no sources given. Give stills, movies, sequences or a .rv session in "
                           "viewing order, or --manifest / --frames-json; see --help.")
         compare = a.compare or (manifest or {}).get("layout", "sequence")
         stereo = a.stereo or ((manifest or {}).get("stereo") if (manifest or {}).get("stereo") != "off" else None)

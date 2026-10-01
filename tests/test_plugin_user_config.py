@@ -2,7 +2,7 @@
 
 Claude Code substitutes a non-sensitive option into skill text when it is set. When it is
 not set (or the skill is installed on its own, outside the plugin) the reference stays as
-written, placeholder and all, so every skill tells the agent to pass it as --rv-bin only when
+written, placeholder and all, so every skill tells the agent to give it as --rv-bin only when
 it reads as a path. Checked by hand with Claude Code 2.1.284: set, the text between the
 brackets was the chosen folder; unset, it was the placeholder itself.
 """
@@ -36,5 +36,5 @@ def test_every_skill_passes_the_option_as_rv_bin_only_when_it_is_a_path():
         assert "--rv-bin" in after, skill
         assert "starts with a dollar sign" in after, skill
         assert "brackets are empty" in after, skill          # an unset option may render as []
-        assert "never pass that text as a path" in after, skill
+        assert "never give that text as a path" in after, skill
         assert "before" in after, skill                      # options go before --push / the tool

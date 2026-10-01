@@ -9,7 +9,7 @@ item_length, offline_item_ranges, image_size), paint_properties(), and the
 write / check / render command line.
 
 Nothing here opens an RV window or runs rv, rvpush or rvio: the CLI 'check' and
-'render' calls pass --rv-bin pointing at an empty folder, which makes rv_tool()
+'render' calls use --rv-bin pointing at an empty folder, which makes rv_tool()
 find nothing (the structural checker is used and render stops before rvio).
 The only real RV tool used is gtoinfo, through the rv_bin fixture, which skips
 when RV / OpenRV is not installed. All media are tiny synthetic Pillow images
@@ -88,7 +88,7 @@ def _three_stills(rs, tmp_path, **top):
         {"path": "shotB_before.png", "label": "shotB before", "group": "shotB"},
     ]
     groups = [{"id": "shotA", "label": "shot A"}, {"id": "shotB"}]
-    return _manifest(rs, tmp_path, items, groups=groups, title="lighting pass", **top)
+    return _manifest(rs, tmp_path, items, groups=groups, title="lighting take", **top)
 
 
 # ---------------------------------------------------------------------------
@@ -246,13 +246,13 @@ def test_build_sequence_three_stills_with_groups(rs, tmp_path):
     assert not any("fps" in ln for ln in session)
     review = _props(objs, "rv", "review")
     assert "int schema_version = 1" in review
-    assert 'string title = "lighting pass"' in review
+    assert 'string title = "lighting take"' in review
     assert 'string layout = "sequence"' in review
     groups_line = next(ln for ln in review if ln.startswith("string groups"))
     assert json.loads(_string_value(groups_line)) == m["groups"]
 
     seq = objs["review_sequence"][2]
-    assert seq["ui"] == ['string name = "lighting pass"']
+    assert seq["ui"] == ['string name = "lighting take"']
     assert seq["session"] == ["int marks = [ 1 3 ]", "int frame = 1"]
 
     conn = _props(objs, "connections", "evaluation")
@@ -336,7 +336,7 @@ def test_build_stack_layouts(rs, tmp_path, layout, op, wipes):
     assert f'string layout = "{layout}"' in _props(objs, "rv", "review")
     assert objs["review_stack"][0] == "RVStackGroup"
     assert _props(objs, "review_stack", "ui") == [
-        f'string name = "lighting pass ({layout})"', f"int wipes = {wipes}"]
+        f'string name = "lighting take ({layout})"', f"int wipes = {wipes}"]
     assert objs["review_stack_stack"][0] == "RVStack"
     assert _props(objs, "review_stack_stack", "composite") == [f'string type = "{op}"']
     # the stack takes the first two items; the sequence still holds all three
@@ -358,7 +358,7 @@ def test_build_tile_layout(rs, tmp_path):
     objs = parse_gto(rs.build(m).text())
     assert 'string viewNode = "review_layout"' in _props(objs, "rv", "session")
     assert objs["review_layout"][0] == "RVLayoutGroup"
-    assert _props(objs, "review_layout", "ui") == ['string name = "lighting pass (tile)"']
+    assert _props(objs, "review_layout", "ui") == ['string name = "lighting take (tile)"']
     assert _props(objs, "review_layout", "layout") == ['string mode = "packed"']
     assert "review_stack" not in objs
     _, rhs = _props(objs, "connections", "evaluation")
@@ -876,7 +876,7 @@ def test_cli_render_without_rvio_stops(tmp_path):
     no_rv.mkdir()
     r = _run("render", "review.rv", "-o", "out/review.mov", "--rv-bin", no_rv, cwd=tmp_path)
     assert r.returncode == 1
-    assert _result(r)["problems"] == ["rvio not found next to rv; pass --rv-bin <RV bin folder>"]
+    assert _result(r)["problems"] == ["rvio not found next to rv; use --rv-bin <RV bin folder>"]
     assert not (tmp_path / "out").exists()
 
 

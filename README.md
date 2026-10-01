@@ -16,10 +16,10 @@ browser or in the Claude iOS and Android apps, because those cannot start RV on 
 
 ![Claude Code rv-review skill: a synthetic stacked before / after / v2 render comparison sheet is split into one frame per version and shown in OpenRV as a labelled flipbook, with timeline marks at each view](docs/images/rv-flipbook.png)
 
-*A synthetic lighting-pass sheet (left) becomes one RV frame per version (right). Left / Right
+*A synthetic lighting sheet (left) becomes one RV frame per version (right). Left / Right
 flips versions in place; the timeline marks jump between views.*
 
-![Animated demo: a synthetic before / after / v2 lighting-pass sheet is split into RV frames, then flipped through in a mocked-up RV review window with labels and a moving timeline playhead, ending on the skill's verified JSON result](docs/images/rv-flipbook-demo.gif)
+![Animated demo: a synthetic before / after / v2 lighting sheet is split into RV frames, then flipped through in a mocked-up RV review window with labels and a moving timeline playhead, ending on the skill's verified JSON result](docs/images/rv-flipbook-demo.gif)
 
 ## Communicate visually with Claude
 
@@ -149,7 +149,7 @@ claude plugin install rv-tools@tvr-skills-rv
 
 or inside Claude Code: `/plugin uninstall rv@tvr-skills-rv`, then
 `/plugin marketplace update tvr-skills-rv` and `/plugin install rv-tools@tvr-skills-rv`, and
-start a new session. If you set `RV_BIN` for 0.2.x, pass that folder as the RV bin folder
+start a new session. If you set `RV_BIN` for 0.2.x, give that folder as the RV bin folder
 setting (or put it in `~/.config/tvr-skills-rv/config.json` as `"rv_bin"`): 0.3.0 reads no
 shell variables.
 
@@ -334,7 +334,7 @@ See [SECURITY.md](SECURITY.md) to report a problem.
 
 ## Troubleshooting
 
-- **"RV not found"**: pass `--rv-bin <folder with rv and rvpush>`, set the plugin's "RV bin
+- **"RV not found"**: use `--rv-bin <folder with rv and rvpush>`, set the plugin's "RV bin
   folder" option, or put `{"rv_bin": "<folder>"}` in `~/.config/tvr-skills-rv/config.json`;
   on macOS the folder is `RV.app/Contents/MacOS`. `RV_BIN` and RV's own variables are no
   longer read (0.3.0).
@@ -355,7 +355,7 @@ See [SECURITY.md](SECURITY.md) to report a problem.
 - **The arrow keys do nothing**: run `python rv-review/scripts/rv_review.py --selftest` on a
   review with two or more frames. It sends Left / Right / Alt+Left / Alt+Right through RV's
   own event tables (no keyboard focus or macOS Accessibility permission needed), checks the
-  frame moves as documented and goes back to where it was. If it passes, the bindings work
+  frame moves as documented and goes back to where it was. If it succeeds, the bindings work
   and the key presses are not reaching RV: click into the RV window first; remote-desktop and
   screen-sharing clients can keep Alt / Option for themselves. On macOS, Alt is the Option key.
 - **A wipe shows only one image**: 0.2.1 and later open the wipe split down the middle
@@ -363,7 +363,7 @@ See [SECURITY.md](SECURITY.md) to report a problem.
   edge in from the side of the frame.
 - **Web captures or SVG rasterising time out, although the PNGs exist**: some Chrome builds
   never exit after `--screenshot`. 0.2.2 and later stop the browser once the PNG is complete
-  and prefer a `chrome-headless-shell` (on PATH or Playwright's); pass `--chrome PATH` (or put
+  and prefer a `chrome-headless-shell` (on PATH or Playwright's); use `--chrome PATH` (or put
   `"chrome"` in the config file) to pick a browser yourself.
 - **A frame shows "error reading" but the load said ok**: 0.2.2 and later decode every still
   and the first frame of each sequence before loading and report failures in `errors`

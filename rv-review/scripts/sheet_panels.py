@@ -278,7 +278,7 @@ def build_parser():
                     "frame size and the first frame of each view).",
         epilog="example:\n  python sheet_panels.py split shot010_side_before_after.png "
                "shot010_top_before_after.png --out review/rv_frames\n\n"
-               "Pass the sheets in viewing order; do not glob or sort (v10 sorts before v9).\n"
+               "Give the sheets in viewing order; do not glob or sort (v10 sorts before v9).\n"
                "Panel labels are the last _-separated tokens of each sheet's file name.",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     s.add_argument("sheets", nargs="+", metavar="SHEET",

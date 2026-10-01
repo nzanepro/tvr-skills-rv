@@ -119,5 +119,5 @@ def find_rv_bin(rv_bin=None):
 def rv_bin(request):
     b = find_rv_bin(request.config.getoption("--rv-bin"))
     if b is None:
-        pytest.skip("RV / OpenRV not installed (or pass --rv-bin DIR)")
+        pytest.skip("RV / OpenRV not installed (or use --rv-bin DIR)")
     return b

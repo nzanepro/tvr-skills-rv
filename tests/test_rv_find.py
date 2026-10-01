@@ -1,7 +1,7 @@
 """Tests for rv_find.py (identical copies in rvio/scripts, rvls/scripts, rvpkg/scripts).
 
 rv_find.py is a standalone script (no sibling imports of its own), so it is loaded by file
-path with importlib. All discovery-order tests build a fake install tree in tmp_path and pass explicit
+path with importlib. All discovery-order tests build a fake install tree in tmp_path and give explicit
 platform / home / root / registry / which / cwd, so behaviour is independent of the host OS
 and of whatever is really installed on the machine running the suite.
 """

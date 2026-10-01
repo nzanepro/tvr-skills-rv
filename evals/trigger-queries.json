@@ -16,7 +16,7 @@
     "should_trigger": true
   },
   {
-    "query": "review in OpenRV, the look-dev pass is ready for a look",
+    "query": "review in OpenRV, the look-dev version is ready for a look",
     "should_trigger": true
   },
   {
@@ -52,7 +52,7 @@
     "should_trigger": false
   },
   {
-    "query": "open the beauty pass exr in nuke so I can check the individual channels",
+    "query": "open the beauty render exr in nuke so I can check the individual channels",
     "should_trigger": false
   },
   {

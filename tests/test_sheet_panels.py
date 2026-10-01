@@ -155,7 +155,7 @@ def test_title_text_and_each_label_survive_the_split(tmp_path, sp):
     # title line, and frame N must carry panel N's label box (not a neighbour's).
     sheet = tmp_path / "shotA_red_green_blue.png"
     title_box, panel_boxes, label_boxes = build_sheet(
-        sheet, bg=(30, 30, 30), title_color=(90, 90, 200), title="shotA: lighting pass",
+        sheet, bg=(30, 30, 30), title_color=(90, 90, 200), title="shotA: lighting take",
         panel_colors=[(200, 40, 40), (40, 200, 40), (40, 40, 200)])
     src = np.asarray(Image.open(sheet).convert("RGB"))
     title_h = title_box[3] - title_box[1]

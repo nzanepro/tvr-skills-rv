@@ -570,7 +570,7 @@ def main(argv=None):
             else:
                 rvio = rv_tool("rvio", a.rv_bin)
                 if not rvio:
-                    raise RuntimeError("rvio not found next to rv; pass --rv-bin <RV bin folder>")
+                    raise RuntimeError("rvio not found next to rv; use --rv-bin <RV bin folder>")
                 Path(a.out).parent.mkdir(parents=True, exist_ok=True)
                 cmd = render_args(rvio, Path(os.path.abspath(a.session)), a.out, extra)
                 r = subprocess.run(cmd, capture_output=True, text=True)

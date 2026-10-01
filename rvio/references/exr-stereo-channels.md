@@ -6,7 +6,7 @@ media, or when only some layers or channels should be used.
 ## EXR header attributes
 
 ```bash
-rvio "in.#.png" -insrgb -outhalf -o "out.#.exr" -outparams "comment:s=first pass" "shot:s=sh010"
+rvio "in.#.png" -insrgb -outhalf -o "out.#.exr" -outparams "comment:s=first take" "shot:s=sh010"
 rvio exif.jpg -insrgb -o out.exr -outparams "passthrough=.*EXIF.*"   # copy input attributes
 ```
 

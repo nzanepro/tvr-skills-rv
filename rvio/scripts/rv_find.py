@@ -362,7 +362,7 @@ def find_rv(want="rvio", rv_bin=None, config=None, platform=None, home=None, roo
     raise RvNotFound(
         f"{want} not found. Tried --rv-bin, rv_bin in {config_path(home)}, PATH, the Windows "
         f"registry, the usual install folders and an OpenRV build (~/OpenRV or a folder "
-        f"above this one holding {OPENRV_MARKER}). Install RV or OpenRV, or pass --rv-bin "
+        f"above this one holding {OPENRV_MARKER}). Install RV or OpenRV, or use --rv-bin "
         f"<RV bin folder>, or put it in that config file as \"rv_bin\".")
 
 

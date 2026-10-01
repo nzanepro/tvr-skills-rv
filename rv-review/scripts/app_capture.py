@@ -267,7 +267,7 @@ def capture_ios(a, dry):
                             _list(a.content_size, IOS_CONTENT_SIZES, "content size"),
                             _list(a.locales))
     if any(v[1]["locale"] for v in variants) and not a.bundle:
-        raise CaptureError("--locales relaunches the app with a language: pass --bundle ID")
+        raise CaptureError("--locales relaunches the app with a language: use --bundle ID")
     log, files, warnings = [], [], []
     if dry:
         # nothing is queried from the simulator in a dry run, so the value being put back is
@@ -318,7 +318,7 @@ def capture_ios(a, dry):
 def capture_android(a, dry):
     adb = find_adb(a.adb) or ("adb" if dry else None)
     if not adb:
-        raise CaptureError("adb not found: pass --adb <Android SDK>/platform-tools/adb, put it in "
+        raise CaptureError("adb not found: use --adb <Android SDK>/platform-tools/adb, put it in "
                            "~/.config/tvr-skills-rv/config.json as \"adb\", put platform-tools "
                            "on PATH, or install the SDK in its default folder; or use --dry-run "
                            "to see the commands")
@@ -329,7 +329,7 @@ def capture_android(a, dry):
         if not devs:
             raise CaptureError("no Android device or emulator connected (adb devices is empty)")
         if len(devs) > 1 and not a.serial:
-            raise CaptureError(f"several devices connected {devs}; pass --serial")
+            raise CaptureError(f"several devices connected {devs}; use --serial")
     for fs in _list(a.font_scale):
         try:
             float(fs)

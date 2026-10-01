@@ -210,7 +210,7 @@ def adapter_unity(root):
     assets = root / "Assets" if (root / "Assets").is_dir() else root
     actual_root, ref_root = assets / "ActualImages", assets / "ReferenceImages"
     if not actual_root.is_dir():
-        raise CompareError(f"{actual_root} not found: run the graphics tests first, or pass the "
+        raise CompareError(f"{actual_root} not found: run the graphics tests first, or give the "
                            f"Unity project folder (the one holding Assets/)")
     refs = list(_walk_files(ref_root, lambda f: f.lower().endswith(".png"))) if ref_root.is_dir() else []
     pairs = []
@@ -307,7 +307,7 @@ def adapter_unreal(root):
                           "note": None if (b and c) else "report names an image that is not on disk"})
     if not pairs:
         raise CompareError(f"no screenshot comparisons found in report JSON under {root}. Run the "
-                           f"tests with -ReportExportPath=<folder> and pass that folder; see "
+                           f"tests with -ReportExportPath=<folder> and give that folder; see "
                            f"references/compare-dirs.md")
     return pairs
 

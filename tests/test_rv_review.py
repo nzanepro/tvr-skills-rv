@@ -632,7 +632,7 @@ def test_live_rv_pids_missing_folder_is_empty(tmp_path, rr):
 def test_pid_alive_for_this_process_and_a_dead_one(rr):
     assert rr.pid_alive(os.getpid())
     assert not rr.pid_alive(0)
-    p = subprocess.Popen([sys.executable, "-c", "pass"])
+    p = subprocess.Popen([sys.executable, "-c", "0"])
     p.wait()
     assert not rr.pid_alive(p.pid)
 
@@ -660,7 +660,7 @@ def test_process_name_of_this_process_is_python(rr):
 
 
 def test_process_name_of_a_dead_process_is_none(rr):
-    p = subprocess.Popen([sys.executable, "-c", "pass"])
+    p = subprocess.Popen([sys.executable, "-c", "0"])
     p.wait()
     assert rr.process_name(p.pid) is None
 

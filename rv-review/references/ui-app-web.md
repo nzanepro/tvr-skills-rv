@@ -86,7 +86,7 @@ python scripts/web_capture.py http://localhost:3000/ http://localhost:3000/prici
 python scripts/review_set.py caps/after --out review/responsive
 ```
 
-Breakpoint folders sort by width (mobile, tablet, desktop; or `w375`, `w1440`); pass
+Breakpoint folders sort by width (mobile, tablet, desktop; or `w375`, `w1440`); give
 `--order` for any other order.
 
 `--group-by breakpoint` writes `caps/<version>/<breakpoint>/<page>.png`; each page becomes a
@@ -146,7 +146,7 @@ be read or put back afterwards, that goes into a "warnings" list in the JSON out
 being skipped silently; `--dry-run` previews the restore commands in a "restore" list, with a
 `<current>` placeholder for the value (nothing is queried from the simulator in a dry run).
 `--locales en-US,ar-SA --bundle <id>` relaunches the app with the standard `-AppleLanguages
-(ar) -AppleLocale ar_SA` launch arguments. Several device sizes: boot each simulator and pass
+(ar) -AppleLocale ar_SA` launch arguments. Several device sizes: boot each simulator and give
 `--device <UDID>` (`xcrun simctl list devices available`); name the variants by device with
 separate `--out` folders or rename the variant folders.
 

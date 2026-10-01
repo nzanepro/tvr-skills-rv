@@ -19,7 +19,7 @@ See CONTRIBUTING.md for the test/eval commands and the privacy rules for anythin
 ## Testing
 
 - [ ] `python -m pytest tests -q` passes locally
-- [ ] `claude plugin validate . --strict` and `python scripts/check_repo.py` pass (only needed if you touched `.claude-plugin/` or a `SKILL.md`)
+- [ ] `claude plugin validate . --strict` and `python scripts/check_repo.py` succeed (only needed if you touched `.claude-plugin/` or a `SKILL.md`)
 - [ ] Tested against a real RV / OpenRV build: <!-- version/build and OS, or "not applicable" -->
 - [ ] Added or updated tests for the behavior this changes
 - [ ] Added or updated trigger-eval entries in `evals/` (only needed if a `SKILL.md` `description:` changed)

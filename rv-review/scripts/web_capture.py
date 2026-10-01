@@ -219,7 +219,7 @@ def pick_backend(wanted="auto", found=None):
             return b
     raise CaptureError("no capture backend found: install Playwright (pip install playwright, "
                        "then playwright install chromium; or npm i -D playwright in the "
-                       "project) or a Chrome / Edge / Chromium browser, or pass --chrome PATH")
+                       "project) or a Chrome / Edge / Chromium browser, or use --chrome PATH")
 
 
 # --- names, breakpoints, jobs -----------------------------------------------------------
@@ -288,7 +288,7 @@ def plan(pages, out, version="capture", breakpoints=DEFAULT_BREAKPOINTS, browser
         url, local = page_url(page)
         name = names[i] if names else page_name(page)
         if name in seen:
-            raise CaptureError(f"two pages are named {name!r}; pass --names to tell them apart")
+            raise CaptureError(f"two pages are named {name!r}; use --names to tell them apart")
         seen.add(name)
         for browser in browsers:
             folder = version if len(browsers) == 1 else f"{version}-{browser}"
@@ -528,7 +528,7 @@ def run_chrome_cli(jobs, opts, chrome=None, shoot=None):
     if stopped:
         notes.append(f"the browser kept running after {stopped} screenshot(s) and was stopped "
                      f"once each file was complete (a chrome-headless-shell avoids this; "
-                     f"pass it with --chrome)")
+                     f"give it with --chrome)")
     return done, failed, notes
 
 

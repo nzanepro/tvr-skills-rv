@@ -106,7 +106,7 @@ def variants_from(paths, order=None):
                 if d.is_dir() and not d.name.startswith((".", "_"))}
         subs = [subs[n] for n in order_names(subs)]
         if not subs:
-            raise cd.CompareError(f"{paths[0]} has no sub-folders; pass the variant folders "
+            raise cd.CompareError(f"{paths[0]} has no sub-folders; give the variant folders "
                                   f"themselves, or a ROOT whose sub-folders are the variants")
         paths = subs
     out = [(p.name, p) for p in paths]
@@ -118,7 +118,7 @@ def variants_from(paths, order=None):
             raise cd.CompareError(f"--order names {missing} are not variants; have {list(known)}")
         out = [(n, known[n]) for n in names]
     if len({n for n, _ in out}) != len(out):
-        raise cd.CompareError("two variants have the same folder name; pass --labels")
+        raise cd.CompareError("two variants have the same folder name; use --labels")
     return out
 
 
