@@ -24,9 +24,11 @@ Finding RV (first match wins; rvpush must sit next to rv). No shell variable is 
   3. rv (rv.exe; RV on macOS) on PATH
   4. Windows only: the App Paths registry key for rv.exe that RV's .reg files add
   5. the usual install folders, newest version first:
-       Windows  Program Files (and x86)/OpenRV*/bin, .../{Autodesk,ShotGrid,Shotgun}/RV*/bin
+       Windows  Program Files (and x86): OpenRV*, Autodesk/RV*, ShotGrid/RV*, Shotgun/RV*,
+                ShotGrid RV*, Shotgun RV* (each with bin)
        macOS    /Applications and ~/Applications: RV*.app, OpenRV*.app (Contents/MacOS)
-       Linux    /opt/rv*/bin, /opt/RV*/bin, /opt/OpenRV*/bin, /usr/local/rv*/bin, /usr/local/bin
+       Linux    /opt/rv*, /opt/RV*, /opt/OpenRV*, /opt/openrv*, /usr/local/rv*,
+                /usr/local/OpenRV* (each with bin), then /usr/local/bin
   6. an OpenRV built from source (openrv-build plugin): the current folder, one of its
      parents, ~/OpenRV or (Windows) C:/OpenRV holding rvcmds.sh, then
      _build/stage/app/RV.app/Contents/MacOS (macOS) or _build/stage/app/bin
@@ -176,11 +178,12 @@ def install_patterns(platform=None, home=None, root="/", program_files=None):
         bases = (program_files() if program_files is not None
                  else local_config.program_files_dirs(root))
         for pf in map(Path, bases):
-            for p in (pf / "OpenRV" / "bin", pf / "OpenRV*" / "bin",
-                      pf / "Autodesk" / "RV*" / "bin", pf / "ShotGrid" / "RV*" / "bin",
-                      pf / "Shotgun" / "RV*" / "bin"):
-                if str(p) not in pats:
-                    pats.append(str(p))
+            # the same folders as rv_find.py in the rvio, rvls and rvpkg skills
+            for sub in ("OpenRV*", "Autodesk/RV*", "ShotGrid/RV*", "Shotgun/RV*",
+                        "ShotGrid RV*", "Shotgun RV*"):
+                p = str(pf / sub / "bin")
+                if p not in pats:
+                    pats.append(p)
         return pats
     if kind == "macos":
         apps = [root / "Applications"]
@@ -189,7 +192,8 @@ def install_patterns(platform=None, home=None, root="/", program_files=None):
         return [str(a / app / "Contents" / "MacOS")
                 for a in apps for app in ("RV*.app", "OpenRV*.app")]
     return [str(root / p) for p in ("opt/rv*/bin", "opt/RV*/bin", "opt/OpenRV*/bin",
-                                    "opt/openrv*/bin", "usr/local/rv*/bin", "usr/local/bin")]
+                                    "opt/openrv*/bin", "usr/local/rv*/bin",
+                                    "usr/local/OpenRV*/bin", "usr/local/bin")]
 
 
 def _pair_in(folder, platform=None):
@@ -664,20 +668,59 @@ def rvpush_args(rvpush, tag, *args, platform=None, env_program=ENV_PROGRAM):
     return cmd
 
 
+def _windows_temp_dir():
+    """The folder Qt's QDir::temp() gives RV: GetTempPath (TMP, then TEMP, then the user
+    profile). Python's tempfile checks TMPDIR first and TEMP before TMP, so the two can
+    differ on a machine that sets them differently; the port files follow Qt."""
+    import ctypes
+    from ctypes import wintypes
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetTempPathW.restype = wintypes.DWORD
+    kernel32.GetTempPathW.argtypes = (wintypes.DWORD, wintypes.LPWSTR)
+    buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH + 1)
+    n = kernel32.GetTempPathW(len(buf), buf)
+    if not 0 < n < len(buf):
+        raise OSError("GetTempPath failed")
+    return Path(buf.value)
+
+
 def rv_port_dir():
     """Where RV writes its network port files: <system temp>/tweak_rv_proc (OpenRV
     RvNetworkDialog::savePortNumber; rvpush reads the same folder)."""
     import tempfile
+    if os.name == "nt":
+        try:
+            return _windows_temp_dir() / "tweak_rv_proc"
+        except (OSError, AttributeError):
+            pass
     return Path(tempfile.gettempdir()) / "tweak_rv_proc"
 
 
-def _pid_alive_windows(pid):
+RV_PROCESS_NAMES = ("rv", "rv64", "openrv")   # executable names, without .exe / .bin
+
+
+def looks_like_rv(name):
+    """True for the executable names RV runs under (RV, rv.exe, rv.bin, RV64 ...)."""
+    base = re.split(r"[\\/]", str(name or ""))[-1].lower()     # a Windows path on any host
+    for ext in (".exe", ".bin"):
+        if base.endswith(ext):
+            base = base[:-len(ext)]
+    return base in RV_PROCESS_NAMES
+
+
+def _open_process_windows(pid):
     import ctypes
     from ctypes import wintypes
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.OpenProcess.restype = wintypes.HANDLE
     kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
-    handle = kernel32.OpenProcess(0x1000, False, pid)     # PROCESS_QUERY_LIMITED_INFORMATION
+    return kernel32, kernel32.OpenProcess(0x1000, False, pid)   # PROCESS_QUERY_LIMITED_INFORMATION
+
+
+def _pid_alive_windows(pid):
+    import ctypes
+    from ctypes import wintypes
+    kernel32, handle = _open_process_windows(pid)
     if not handle:
         return ctypes.get_last_error() == 5                 # access denied: it exists
     try:
@@ -686,6 +729,38 @@ def _pid_alive_windows(pid):
         return bool(ok) and code.value == 259               # STILL_ACTIVE
     finally:
         kernel32.CloseHandle(handle)
+
+
+def _process_name_windows(pid):
+    import ctypes
+    from ctypes import wintypes
+    kernel32, handle = _open_process_windows(pid)
+    if not handle:
+        return None
+    try:
+        size = wintypes.DWORD(wintypes.MAX_PATH * 4)
+        buf = ctypes.create_unicode_buffer(size.value)
+        # PROCESS_QUERY_LIMITED_INFORMATION is enough for the image path (flags 0: Win32 path)
+        if not kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+            return None
+        return buf.value
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def process_name(pid):
+    """The executable of a running process (a path on Windows, the command name elsewhere),
+    or None when it cannot be read."""
+    try:
+        if os.name == "nt":
+            return _process_name_windows(pid)
+        r = subprocess.run(["ps", "-o", "comm=", "-p", str(pid)], capture_output=True,
+                           text=True, timeout=5)
+        if r.returncode != 0:
+            return None
+        return r.stdout.strip() or None
+    except (OSError, AttributeError, subprocess.SubprocessError, ValueError):
+        return None
 
 
 def pid_alive(pid):
@@ -704,15 +779,26 @@ def pid_alive(pid):
         return False
     except PermissionError:
         return True
-    except OSError:
+    except (OSError, OverflowError, ValueError):
         return False
     return True
 
 
-def live_rv_pids(tag, folder=None, alive=pid_alive):
+def rv_alive(pid, alive=pid_alive, name=process_name):
+    """True when `pid` is a running RV. A crashed RV leaves its port file behind, and the
+    system can hand its id to some other program later; a file whose process is not RV is
+    stale, and must not make rvpush run (on Windows rvpush then starts an RV of its own).
+    When the name cannot be read, the live pid is taken as RV."""
+    if not alive(pid):
+        return False
+    found = name(pid)
+    return found is None or looks_like_rv(found)
+
+
+def live_rv_pids(tag, folder=None, alive=rv_alive):
     """Process ids of RVs listening under `tag`: port files <pid>_<tag> (RV writes <pid>_
     without a tag) in folder (default rv_port_dir()) that hold a port number and whose process
-    is alive. A crashed RV leaves its file behind; its dead pid is skipped."""
+    is a live RV. A crashed RV leaves its file behind; its dead or reused pid is skipped."""
     folder = rv_port_dir() if folder is None else Path(folder)
     try:
         entries = list(folder.iterdir())
@@ -731,8 +817,13 @@ def live_rv_pids(tag, folder=None, alive=pid_alive):
                 port = fh.readline().strip()
         except OSError:
             continue
-        if port.isdigit() and int(port) > 0 and alive(int(parts[0])):
-            pids.append(int(parts[0]))
+        try:
+            pid = int(parts[0])
+            live = port.isdigit() and int(port) > 0 and alive(pid)
+        except (OverflowError, ValueError):   # a stray all-digit name too long for a pid
+            continue
+        if live:
+            pids.append(pid)
     return pids
 
 
@@ -1779,11 +1870,23 @@ PUSH_COMMANDS = ("set", "merge", "mu-eval", "mu-eval-return", "py-eval", "py-eva
                  "py-exec", "url")
 
 
-def push_body(rvpush, tag, words):
+def own_options(parser=None):
+    """This script's option strings (--tag, --rv-bin, ...)."""
+    parser = parser or build_parser()
+    return {s for action in parser._actions for s in action.option_strings}
+
+
+def push_body(rvpush, tag, words, options=None):
     """--push: one guarded rvpush command. py-exec exits 0 even when the Python raises, so
     read the state back afterwards (py-eval-return)."""
     if not words or words[0] not in PUSH_COMMANDS:
         raise RvError("--push needs an rvpush command first: " + ", ".join(PUSH_COMMANDS) + ".")
+    # --push takes everything after it, so an option of this script placed there would be
+    # sent to RV as part of the command (and py-exec would report success for the error)
+    stray = [w for w in words[1:] if w.split("=", 1)[0] in (options or own_options())]
+    if stray:
+        raise RvError(f"{' '.join(stray)} came after --push and would be sent to RV as text. "
+                      f"Put --tag, --rv-bin and the other options before --push.")
     if not live_rv_pids(tag):
         raise RvError(f"no RV with tag '{tag}' is running, so nothing was sent (rvpush was not "
                       f"run, and no RV was started). Load sources with this script first, or "

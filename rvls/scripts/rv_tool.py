@@ -138,6 +138,16 @@ def main(argv=None):
               f"rv-review skill to show media in RV.", file=sys.stderr)
         return 2
     tool_args = args.args[1:] if args.args[:1] == ["--"] else args.args
+    if args.args[:1] != ["--"]:
+        # everything after TOOL goes to the tool, so one of this script's own options placed
+        # there would reach rvio or rvls as an unknown flag; an explicit -- means it is meant
+        own = {s for action in ap._actions for s in action.option_strings}
+        stray = [w for w in tool_args if w.split("=", 1)[0] in own]
+        if stray:
+            print(f"{' '.join(stray)} came after {args.tool} and would be passed to it. Put "
+                  f"this script's options before the tool name: python rv_tool.py "
+                  f"{' '.join(stray)} {args.tool} ...", file=sys.stderr)
+            return 2
     res = run(args.tool, tool_args, args.rv_bin, args.timeout, args.cwd, args.strict)
     if args.json:
         print(json.dumps(res, indent=2))

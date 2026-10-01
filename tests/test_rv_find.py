@@ -347,6 +347,16 @@ def test_known_folder_is_none_off_windows(rvfind):
     assert rvfind.known_folder(rvfind.FOLDERID_PROGRAM_FILES[0]) is None
 
 
+@pytest.mark.skipif(os.name != "nt", reason="SHGetKnownFolderPath exists on Windows only")
+def test_known_folders_are_existing_folders_on_windows(rvfind):
+    for guid in rvfind.FOLDERID_PROGRAM_FILES:
+        folder = rvfind.known_folder(guid)
+        assert folder is not None and folder.is_dir(), guid
+        assert "program files" in str(folder).lower()
+    assert any(f.is_dir() and f.name.lower().startswith("program files")
+               for f in rvfind.program_files_dirs())
+
+
 def test_install_patterns_take_injected_program_files(tmp_path, rvfind):
     pats = rvfind.install_patterns("win32", program_files=lambda: [tmp_path / "PF"])
     assert str(tmp_path / "PF" / "OpenRV*" / "bin") in pats

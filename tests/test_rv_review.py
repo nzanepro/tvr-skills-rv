@@ -75,21 +75,37 @@ def _where(tmp_path, **kw):
 def test_install_patterns_windows_uses_every_program_files_folder(tmp_path, rr):
     pf1, pf2 = tmp_path / "pf1", tmp_path / "pf2"
     pats = rr.install_patterns(WIN, root=tmp_path, program_files=lambda: [pf1, pf2])
-    assert str(pf1 / "OpenRV" / "bin") in pats
-    assert str(pf2 / "OpenRV" / "bin") in pats
+    assert str(pf1 / "OpenRV*" / "bin") in pats
+    assert str(pf2 / "OpenRV*" / "bin") in pats
 
 
 def test_install_patterns_windows_default_is_program_files_under_root(tmp_path, rr):
     pats = rr.install_patterns(WIN, root=tmp_path)
-    assert str(tmp_path / "Program Files" / "OpenRV" / "bin") in pats
-    assert str(tmp_path / "Program Files (x86)" / "OpenRV" / "bin") in pats
+    assert str(tmp_path / "Program Files" / "OpenRV*" / "bin") in pats
+    assert str(tmp_path / "Program Files (x86)" / "OpenRV*" / "bin") in pats
 
 
 def test_install_patterns_windows_dedups_identical_folders(tmp_path, rr):
     pf = tmp_path / "pf"
     pats = rr.install_patterns(WIN, root=tmp_path, program_files=lambda: [pf, pf])
     assert len(pats) == len(set(pats))
-    assert pats.count(str(pf / "OpenRV" / "bin")) == 1
+    assert pats.count(str(pf / "OpenRV*" / "bin")) == 1
+
+
+def test_install_patterns_match_the_rvio_skills_rv_find(tmp_path, rr):
+    # the four skills look in the same folders; rv_find.py is the copy the other three share
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "rv_find_for_compare", Path(__file__).resolve().parents[1] / "rvio" / "scripts" / "rv_find.py")
+    rv_find = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rv_find)
+    pf = [tmp_path / "pf"]
+    for platform in (WIN, MAC, LINUX):
+        ours = rr.install_patterns(platform, root=tmp_path, home=tmp_path / "home",
+                                   program_files=lambda: pf)
+        theirs = rv_find.install_patterns(platform, root=tmp_path, home=tmp_path / "home",
+                                          program_files=lambda: pf)
+        assert ours == theirs, platform
 
 
 def test_install_patterns_macos_includes_root_and_home_applications(tmp_path, rr):
@@ -166,7 +182,7 @@ def test_find_rv_config_app_bundle_uses_contents_macos(tmp_path, rr):
     assert result == winner
 
 
-def test_find_rv_via_real_shutil_which(tmp_path, rr, monkeypatch):
+def test_find_rv_via_patched_shutil_which(tmp_path, rr, monkeypatch):
     """Without an injected which, PATH is searched by shutil.which itself."""
     path_dir = tmp_path / "pathdir"
     winner = _make_pair(rr, path_dir, sys.platform, executable=True)
@@ -618,12 +634,75 @@ def test_pid_alive_for_this_process_and_a_dead_one(rr):
     assert not rr.pid_alive(0)
     p = subprocess.Popen([sys.executable, "-c", "pass"])
     p.wait()
-    assert not rr.pid_alive(p.pid) or os.name == "nt"
+    assert not rr.pid_alive(p.pid)
 
 
-def test_rv_port_dir_is_under_the_system_temp_folder(rr):
-    import tempfile
-    assert rr.rv_port_dir() == Path(tempfile.gettempdir()) / "tweak_rv_proc"
+def test_pid_alive_rejects_numbers_too_big_for_a_pid(rr):
+    assert not rr.pid_alive(2 ** 70)
+
+
+def test_live_rv_pids_skips_a_file_name_too_long_for_a_pid(tmp_path, rr):
+    d = tmp_path / "p"
+    _port_file(d, "9" * 40 + "_rv-review")
+    _port_file(d, "8_rv-review")
+    def alive(pid):
+        if pid == 8:
+            return True
+        os.kill(pid, 0)                       # OverflowError for the long name on POSIX
+        return True
+    assert rr.live_rv_pids("rv-review", d, alive) == [8]
+    assert rr.live_rv_pids("rv-review", d) == []       # the real check: neither is a live RV
+
+
+def test_process_name_of_this_process_is_python(rr):
+    name = rr.process_name(os.getpid())
+    assert name and "python" in Path(name).name.lower()
+
+
+def test_process_name_of_a_dead_process_is_none(rr):
+    p = subprocess.Popen([sys.executable, "-c", "pass"])
+    p.wait()
+    assert rr.process_name(p.pid) is None
+
+
+@pytest.mark.parametrize("name, ok", [
+    ("rv", True), ("RV", True), ("rv.exe", True), ("RV64", True), ("rv.bin", True),
+    ("C:\\Program Files\\OpenRV\\bin\\rv.exe", True),
+    ("/Applications/RV.app/Contents/MacOS/RV", True), ("openrv", True),
+    ("rvio", False), ("rvpush", False), ("python3.9", False), ("", False), (None, False),
+])
+def test_looks_like_rv(rr, name, ok):
+    assert rr.looks_like_rv(name) is ok
+
+
+def test_rv_alive_needs_a_live_pid_that_is_rv(rr):
+    assert rr.rv_alive(5, alive=lambda pid: True, name=lambda pid: "/opt/rv/bin/rv")
+    assert rr.rv_alive(5, alive=lambda pid: True, name=lambda pid: None)   # unknown: trust it
+    assert not rr.rv_alive(5, alive=lambda pid: True, name=lambda pid: "python3")  # reused pid
+    assert not rr.rv_alive(5, alive=lambda pid: False, name=lambda pid: "rv")
+
+
+def test_live_rv_pids_ignores_a_port_file_whose_pid_now_belongs_to_another_program(tmp_path, rr):
+    d = tmp_path / "p"
+    _port_file(d, f"{os.getpid()}_rv-review")   # this test process is alive, but is not RV
+    assert rr.live_rv_pids("rv-review", d) == []
+
+
+def test_rv_port_dir_is_the_platform_temp_folder_plus_tweak_rv_proc(rr):
+    d = rr.rv_port_dir()
+    assert d.name == "tweak_rv_proc"
+    assert d.parent.is_dir()
+    if os.name == "nt":
+        # Qt's QDir::temp(), which RV uses, is GetTempPath: it may differ from Python's choice
+        assert d.parent == rr._windows_temp_dir()
+    else:
+        import tempfile
+        assert d.parent == Path(tempfile.gettempdir())
+
+
+@pytest.mark.skipif(os.name != "nt", reason="GetTempPath exists on Windows only")
+def test_windows_temp_dir_is_an_existing_folder(rr):
+    assert rr._windows_temp_dir().is_dir()
 
 
 def test_rvpush_is_not_run_without_a_live_rv(rr, monkeypatch):
@@ -654,6 +733,16 @@ def test_rvpush_runs_with_the_guarded_command_line(rr, monkeypatch):
 def test_push_body_needs_a_command_and_a_live_rv(rr, monkeypatch):
     with pytest.raises(rr.RvError, match="rvpush command"):
         rr.push_body("rvpush", "t", ["bogus"])
+    # --push takes the rest of the line: one of this script's own options after it would be
+    # pushed to RV as text, and py-exec would even report success for the resulting error
+    for words in (["py-exec", "rv.commands.play()", "--rv-bin", "/opt/rv/bin"],
+                  ["py-exec", "x", "--tag=other"], ["set", "a.exr", "--state"]):
+        with pytest.raises(rr.RvError, match="before --push"):
+            rr.push_body("rvpush", "t", words)
+    monkeypatch.setattr(rr, "live_rv_pids", lambda tag: [5])
+    monkeypatch.setattr(rr, "_rvpush", lambda rvpush, tag, *a: (0, ""))
+    assert rr.push_body("rvpush", "t", ["py-exec", "x = '--rv-bin'"])["rvpush_exit"] == 0
+    monkeypatch.setattr(rr, "live_rv_pids", lambda tag: [])
     monkeypatch.setattr(rr, "live_rv_pids", lambda tag: [])
     with pytest.raises(rr.RvError, match="nothing was sent"):
         rr.push_body("rvpush", "t", ["py-exec", "x"])
@@ -676,6 +765,14 @@ def test_cli_push_without_live_rv_prints_one_json_error(rr, monkeypatch, capsys,
     code = rr.main(["--tag", "t", "--push", "py-exec", "rv.commands.play()"])
     res = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert code == 1 and res["ok"] is False and "nothing was sent" in res["error"]
+
+
+def test_cli_push_refuses_an_option_placed_after_it(rr, monkeypatch, capsys):
+    monkeypatch.setattr(rr, "find_rv", lambda *a, **k: ("rv", "rvpush"))
+    monkeypatch.setattr(rr, "live_rv_pids", lambda tag: [5])
+    code = rr.main(["--push", "py-exec", "rv.commands.play()", "--rv-bin", "/opt/rv/bin"])
+    res = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert code == 1 and "--rv-bin" in res["error"] and "before --push" in res["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -786,3 +883,12 @@ def test_config_file_with_a_byte_order_mark_is_read(tmp_path):
     assert local_config.load_config(tmp_path) == {"chrome": "~/c"}
     assert local_config.setting(None, "chrome", home=tmp_path) == (str(tmp_path / "c"), "config")
     assert local_config.setting("~/flag", "chrome", home=tmp_path) == (str(tmp_path / "flag"), "flag")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="SHGetKnownFolderPath exists on Windows only")
+def test_local_config_known_folders_exist_on_windows():
+    import local_config
+    for guid in (*local_config.FOLDERID_PROGRAM_FILES, local_config.FOLDERID_LOCAL_APPDATA,
+                 local_config.FOLDERID_ROAMING_APPDATA):
+        folder = local_config.known_folder(guid)
+        assert folder is not None and folder.is_dir(), guid
