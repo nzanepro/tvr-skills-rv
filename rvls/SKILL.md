@@ -4,7 +4,7 @@ description: "Lists and inspects image sequences and movies with RV / OpenRV's r
 license: MIT
 compatibility: Needs RV or OpenRV (rvls) and Python 3.9 or later for the helper scripts (standard library only); rvls_check.py --parse also works on saved rvls output without RV. Desktop only (Claude Code CLI, desktop app or IDE extension on Windows, macOS or Linux); not claude.ai in a browser or the iOS / Android apps, which cannot run RV on your machine.
 metadata:
-  version: 0.2.0
+  version: 0.2.1
 ---
 
 # List and inspect sequences with rvls

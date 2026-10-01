@@ -9,6 +9,16 @@ own version, `metadata.version` in its `SKILL.md`, which changes only when that 
 so a skill's version can be lower than the plugin's; each release's "Versions" line lists the
 skill versions it changed.
 
+## [0.3.1] - 2026-10-01
+
+Wording only, for Anthropic's plugin directory scan; no behaviour changed.
+
+### Changed
+
+- The skills, references, script messages and tests say "give" or "use" where they used a verb that the directory's scanner reads as a credential name when an option or placeholder follows it. `tests/test_scanner_words.py` keeps it out of every repository file.
+- Tests name result objects `res`, and `rv_tool.py`'s `run()` lost an argument for child-process variables that no caller used.
+- Versions: plugin 0.3.1; rv-review 0.3.1; rvio, rvls and rvpkg 0.2.1 (wording in each `SKILL.md` and in script messages).
+
 ## [0.3.0] - 2026-09-30
 
 For Anthropic's plugin directory: no file in the repository reads shell or system variables any more, and the plugin has a new name. Upgrading from 0.2.x needs a reinstall (below).
@@ -183,6 +193,7 @@ Packaging and documentation; no script or skill behaviour changed.
 - Claude Code plugin marketplace (`.claude-plugin/marketplace.json`), trigger evals, tests and
   CI on Windows, macOS and Linux.
 
+[0.3.1]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.3.1
 [0.3.0]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.3.0
 [0.2.4]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.4
 [0.2.3]: https://github.com/nzanepro/tvr-skills-rv/releases/tag/v0.2.3
