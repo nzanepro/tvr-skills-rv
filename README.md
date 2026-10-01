@@ -21,11 +21,22 @@ flips versions in place; the timeline marks jump between views.*
 
 ![Animated demo: a synthetic before / after / v2 lighting-pass sheet is split into RV frames, then flipped through in a mocked-up RV review window with labels and a moving timeline playhead, ending on the skill's verified JSON result](docs/images/rv-flipbook-demo.gif)
 
+## Communicate visually with Claude
+
+Some feedback is easier to draw than to write: "this edge", "move this here", a circled
+region, an arrow. In RV, turn on the annotation tool (F10) and draw or type on any frame. Then
+ask Claude to read your notes. It runs `rv_review.py --notes --export-annotated DIR`, which
+renders each annotated frame with your drawing burnt in to a PNG and opens those images, so
+your marks, arrows and circled regions reach Claude as pictures, next to the frame number and
+the item they are on. Text you typed comes back as text, and each frame's stroke count is
+reported too. A tracker integration uses the same mechanism (see
+[`integration.md`](rv-review/references/integration.md#notes-and-annotations)).
+
 ## Skills
 
 | Skill | What it does |
 |---|---|
-| [`rv-review`](rv-review/SKILL.md) | Loads stills, sheets, movies, sequences, multi-view / stereo EXRs and 360 images into one RV window and verifies the load; compares baseline and candidate folders, UI / app / web screenshots and SVGs with difference frames; saves .rv sessions; returns reviewers' notes as JSON |
+| [`rv-review`](rv-review/SKILL.md) | Loads stills, sheets, movies, sequences, multi-view / stereo EXRs and 360 images into one RV window and verifies the load; compares baseline and candidate folders, UI / app / web screenshots and SVGs with difference frames; saves .rv sessions; returns reviewers' notes as JSON, with their drawings on frames as images Claude can look at |
 | [`rvio`](rvio/SKILL.md) | Convert image sequences to movies and back with rvio: EXR / OpenEXR, DPX, TIFF, PNG, JPEG, MOV / MP4; resize, crop, frame ranges, fps, audio, colour (sRGB, log, ACES, LUTs, baked OCIO), slates, frame burn-ins, watermarks |
 | [`rvls`](rvls/SKILL.md) | List image sequences and find missing frames with rvls: frame ranges, gaps, resolution, bit depth, codec, timecode and full file headers; checks that a render or conversion is complete |
 | [`rvpkg`](rvpkg/SKILL.md) | Install, uninstall and opt in to RV packages (.rvpkg plugins) with rvpkg; list what is installed and loaded, and set up support areas |
@@ -50,6 +61,7 @@ The rest of this README describes `rv-review`.
   and reports any difference instead of assuming the load worked.
 - **Baseline vs candidate.** Compares two folders (or a test tool's failures) and shows only what changed: baseline, candidate and an absolute-difference frame per pair, most changed first.
 - **UI, apps and the web.** Captures pages at breakpoints and app screens in light / dark, text sizes and locales, rasterises SVGs, and flips one screen through its variants.
+- **Draw for Claude.** Sketch on a frame in RV (F10: pen, circles, arrows, text) and Claude reads the drawing back as an image, with any text you typed, instead of needing it described in words.
 - **Sessions and notes.** Saves the review as an .rv session (reopen it, or render it with rvio) and reads the reviewer's annotations back per item.
 
 **Use it for:** render review and look-dev in VFX, animation and games; lighting and

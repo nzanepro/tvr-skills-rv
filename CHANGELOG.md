@@ -13,6 +13,10 @@ skill versions it changed.
 
 For Anthropic's plugin directory: no file in the repository reads shell or system variables any more, and the plugin has a new name. Upgrading from 0.2.x needs a reinstall (below).
 
+### Added
+
+- The README (a "Communicate visually with Claude" section, a feature bullet and the Skills table) and the rv-review skill (its description and step 5) now describe drawing in RV for Claude: the reviewer draws or types on frames with RV's annotation tool (F10), and `rv_review.py --notes --export-annotated DIR` brings the annotated frames back as PNGs that Claude opens and looks at. The feature itself is unchanged; only the documentation and the skill's description changed.
+
 ### Changed
 
 - **The plugin is renamed from `rv` to `rv-tools`**, because the directory held the two-letter name as too close to another listing's (`NAME_CONFUSABLE`). Install it as `rv-tools@tvr-skills-rv`; the skills are now `/rv-tools:rv-review`, `/rv-tools:rvio`, `/rv-tools:rvls` and `/rv-tools:rvpkg`. The marketplace (`tvr-skills-rv`), the repository and the skill folders keep their names. `plugin.json` also has a `displayName`, "RV and OpenRV Media Review".
